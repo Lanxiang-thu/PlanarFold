@@ -1,0 +1,21 @@
+
+ &cntl
+  ntpr = 10000,
+  ntwx = 10000,
+  ntr = 1,
+  restraint_wt = 0.1,
+  restraint_eq = 10.0,
+  rcut = 11.0,
+  nscm = 1000,
+  nstlim = 1250000,
+  dt = 0.004,
+  ntt = 1,
+  ntemp = 4,
+  tautp = 0.005,
+  temp0 = 800,  300,   0,   0,
+  tempi =    0, 800, 300,   0,
+  duration = 50000, 50000, 100000, 50000,
+  verlet_cut = 30.0,
+  nVerlet = 1000,
+  dpr = 1,
+ /
