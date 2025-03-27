@@ -14,4 +14,5 @@
   $ ./build.sh
 
 4. Execute the software：
-  $ PlanarFold -h
+  $ cd PlanarFold/tools
+  $ ./PlanarFold -h
