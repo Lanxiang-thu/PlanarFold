@@ -1,4 +1,4 @@
-#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+#!/usr/bin/env python
 import os
 import sys
 import numpy as np
