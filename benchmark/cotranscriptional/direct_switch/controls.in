@@ -1,0 +1,21 @@
+
+ &cntl
+  ntpr = 200,
+  ntwx = 200,
+  ntr = 0,
+  ismd = 0,
+  dumpfreq = 1000,
+  stretch_spring = 0.0005,
+  restraint_wt = 0.5,
+  restraint_eq = 10.0,
+  rcut = 11.0,
+  nscm = 1000,
+  nstlim = 100000,
+  dt = 0.004,
+  ntt = 1,
+  ntemp = 1,
+  tautp = 0.005,
+  temp0 = 433.0,
+  tempi = 433.0,
+  duration = 1000,
+ /
