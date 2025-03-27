@@ -1,0 +1,15 @@
+name: my_python3.9
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - numpy
+  - boost=1.80.0          # provide libboost_python39.so
+  - netcdf4=1.6.3         # provide libnetcdf.so
+  - cmake                 # if other lib are compiles
+  - compilers             # g++
+  - scipy=1.13.1
+  - matplotlib=3.9.4
+  - scikit-learn=1.6.1
+  - seaborn=0.13.2
