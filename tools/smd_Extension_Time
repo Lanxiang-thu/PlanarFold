@@ -1,0 +1,79 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import os
+import sys
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import argparse
+
+#----------------------------------------------------------------------------------------------
+parser = argparse.ArgumentParser(description='='*80+"\n  *** smd_Extension_Time ***\n\n\tDraw the extension-time curves of SMD simulation\n"+'='*80, formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument('--fndist',type=str, help='The SMD output file, usually the merged file for c.f.SMD, e.g., all_dist.RST''\n\n', metavar='')
+parser.add_argument('--lw', default=1, type=float, help='linewidth, default=1''\n\n', metavar='')
+parser.add_argument('--s', default=2, type=float, help='markersize, default=2''\n\n', metavar='')
+parser.add_argument('--compression', default=100, type=int, help='The data is averaged every "compression" steps, default=2''\n\n', metavar='')
+#----------------------------------------------------------------------------------------------
+args = parser.parse_args()
+LW = args.lw
+MARKERSIZE = args.s
+fnDist = args.fndist
+compress = args.compression
+needLegend = 1
+print('Compression:', compress)
+
+#-------------------------------------------------------------------------------------------
+#COLOR = ['#8FBC94', '#548687']
+#COLOR = ['#548687', '#8FBC94', '#C5E99B']
+#COLOR = ['#F6B352', '#EE7785', '#84B1ED']
+COLOR = ['#E1E3DA']*1 + ['#F6B352']*0 + ['#EE7785']*0 + ['#84B1ED']*0 + ['#548687']*0 + ['#9055A2']*1
+#-------------------------------------------------------------------------------------------
+lines = open(fnDist).readlines()
+#print(lines)
+extension = []
+for line in lines:
+    data = line.split()
+    if len(data)<3:
+        break
+    #print(data)
+    extension.append(data[1])
+extension = np.array(list(map(float, extension)))
+#--------- smoothing --------------------------------------------------------------
+ndata = len(extension)
+ndata_compressed = int(ndata/compress)
+smoothed_extension = []
+for i in range(ndata_compressed):
+    smoothed_extension.append(np.sum(extension[i*compress:(i+1)*compress]))
+smoothed_extension = np.array(list(map(float, smoothed_extension))) / compress
+
+#----------- Draw Extension-Time data ----------------------------------------------------------------------
+TITLE = fnDist
+plt.plot(np.arange(len(smoothed_extension)), smoothed_extension, lw=LW, marker='o', markersize=MARKERSIZE, c='black', label=TITLE, alpha=0.7)
+#==================================================================
+plt.ylabel('Extension (Angstrom)', fontsize=20)
+plt.xlabel('Frames', fontsize=20)
+plt.title('(compress={0})'.format(compress), fontsize=20)
+#plt.ylim(0, 300)
+#for i in range(0,300,50):
+#    plt.hlines(i, len(smoothed_extension)*-0.01, len(smoothed_extension)*1.01, lw=1, alpha=0.3, linestyle='-.', color='gray',zorder=1)
+plt.legend(markerscale=2, fontsize=12)
+#plt.title(TITLE, fontsize=12)
+plt.subplots_adjust(left=0.2, bottom=0.14)
+plt.xticks(fontsize=15)
+plt.yticks(fontsize=15)
+plt.show()
+
+#----------- Draw the distribution of extension ----------------------------------------------------------------------
+sns.distplot(extension, hist = True, kde=False, norm_hist = True, bins=500, color='black', vertical=True, label=fnDist)
+plt.ylabel('Extension (Angstrom)', fontsize=20)
+plt.xlabel('Probability', fontsize=20)
+plt.title('(compress={0})'.format(1), fontsize=20)
+#plt.ylim(0, 300)
+#plt.xlim(0.0, 0.038)
+#for i in range(0,300,50):
+#    plt.hlines(i, len(smoothed_extension)*-0.01, len(smoothed_extension)*1.01, lw=1, alpha=0.3, linestyle='-.', color='gray',zorder=1)
+plt.legend(markerscale=2, fontsize=12)
+plt.xticks(fontsize=12)
+plt.yticks(fontsize=15)
+plt.subplots_adjust(left=0.2, bottom=0.14)
+#plt.title(TITLE, fontsize=12)
+plt.show()

@@ -1,0 +1,83 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import os
+import sys
+import argparse
+
+#----------------------------------------------------------------------------------------------
+parser = argparse.ArgumentParser(description='='*80+"\n  *** extract_Apical_loops ***\n\n\tFilter the secondary structure to keep only apical stems\n"+'='*80, formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument('--seq', default='ssRNA.seq', type=str, help='RNA sequence file; default = ''ssRNA.seq''\n\n', metavar='')
+parser.add_argument('--seq_apical', default='ssRNA_apical.seq', type=str, help='RNA sequence file, with secondary structure filtered with only apical stems; default = ''ssRNA_apical.seq''\n\n', metavar='')
+# read the filenames
+args = parser.parse_args()
+fnseq = args.seq              # The sequence file
+fnseqApi = args.seq_apical    # The modified sequence file
+#----------------------------------------------------------------------------------------------
+lines = open(fnseq).readlines()
+if len(lines) < 2:
+    print("Error: this sequence file provides no secondary structure")
+    sys.exit(1)
+else:
+    dots = lines[2].strip()
+nRes = len(dots)
+stack = []
+#bplist = []
+Apicals = []
+isApi = 0
+lastBrat = '.'
+for i in range(nRes):
+    if dots[i] == '(':
+        lastBrat = '('
+        stack.append(i)
+    if dots[i] == ')':
+        if lastBrat == '(':
+            isApi = 1
+        else:
+            isApi = 0
+        if isApi:
+            Apicals.append(i)
+        lastBrat = ')'
+        #bplist.append([stack[-1], i])
+        stack.pop()
+#nBP = len(bplist)
+#print('nBP:', nBP)
+#print('bplist:', bplist)
+#print('Apicals:', Apicals)
+dots_apical = ['.'] * nRes
+for i in range(len(Apicals)):
+    idx = Apicals[i]
+    #--------- chech the loop size -----------
+    nLoop = 0
+    for j in range(idx-1, -1, -1):
+        if dots[j] == '.':
+            nLoop += 1
+        else:
+            break
+    #print('{0} : idx={1}, nLoop={2}'.format(i, idx, nLoop))
+    #----------------------------------
+    for j in range(0, nRes-idx-2):
+        res3 = dots[idx+j]
+        res5 = dots[idx-nLoop-1-j]
+        #print('res5:', res5, 'res3:', res3)
+        if res5== '(' and res3==')':
+            dots_apical[idx-nLoop-1-j] = '('
+            dots_apical[idx+j] = ')'
+        else:
+            break
+
+# keep the ternimal connected
+print('The ternimi are restrained to keep circular conformation')
+dots_apical[0] = '('
+dots_apical[1] = '('
+dots_apical[-2] = ')'
+dots_apical[-1] = ')'
+##--------------------------------#--------------------------------
+dots_apical = ''.join(dots_apical)
+print('\toriginal secondary structure:', dots)
+print('\tfiltered secondary structure:', dots_apical)
+
+fo = open(fnseqApi, "w")
+fo.write(lines[0])
+fo.write(lines[1])
+fo.write(dots_apical+'\n')
+fo.close()
+print('\twritten:', fnseqApi)

@@ -1,0 +1,40 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import numpy as np
+from math import *
+import sys
+import os
+import argparse
+
+#==============================================================================================================
+# this code only applies to non-psuedoknot sequence!!
+#==============================================================================================================
+parser = argparse.ArgumentParser(description='='*80+"\n  *** dots2restaints ***\n\n\t Split the .dots file into separate restraint and confinement files\n"+'='*80, formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument('--dots', type=str, help='The output file, suffix ".dots" is suggested\n\n', metavar='')
+parser.add_argument('--len', default=3, type=int, help='The lenght file index number, is default = 3, (_000.in)\n\n', metavar='')
+args = parser.parse_args()
+#==============================================================================================================
+fnDB = args.dots
+LEN = args.len
+if fnDB == None:
+    print('Error: .dots file must be specified')
+    sys.exit(1)
+#--------------------------------------------------------------
+lines = open(fnDB).readlines()
+for i in range(len(lines)):
+    if len(lines[i].split()) == 3:
+        if lines[i].split()[0] == 'nCand_merge':
+            nCand = int(lines[i].split()[2])
+            print('nCand:', nCand)
+            header = lines[i-2].split('_')[0] + '\n'
+            seq = lines[i-1].strip() + '\n'
+            for j in range(nCand):
+                fnntr = open('restraint_ntr_{0}.in'.format(str(j+1).zfill(LEN)), "w")
+                fndpr = open('restraint_dpr_{0}.in'.format(str(j+1).zfill(LEN)), "w")
+                fnntr.write(header)
+                fnntr.write(seq)
+                fnntr.write(lines[i+j+1].split()[0] + '\n')
+                fndpr.write(header)
+                fndpr.write(seq)
+                fndpr.write(lines[i+j+1].split()[0] + '\n')
+            break
+print(nCand, ' restriant and confinement files has been written')

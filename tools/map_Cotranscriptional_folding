@@ -1,0 +1,169 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import os
+import sys
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import argparse
+
+
+#====== Main ====================================================================================================
+parser = argparse.ArgumentParser(description='='*80+"\n  *** map_Cotranscriptional_folding ***\n\n\tMap the base-pairs along the co-transcriptional folding trajectory\n"+'='*80, formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument('-s', '--seq', default='ssRNA.seq', type=str, help='RNA sequence file; default = ''ssRNA.seq''\n\n', metavar='')
+parser.add_argument('--prefix', type=str, help='If iMulti=1, the energy filenames will be "prefixNNN.out"\n\n', metavar='')
+parser.add_argument('--files',type=str, help='An array of filename index range. e.g.: --files 10-73''\n\n', metavar='')
+parser.add_argument('--len', default=3, type=int, help='The lenght file index number, is default = 3, (example: prefix001.out)\n\n', metavar='')
+parser.add_argument('--step', default=1, type=int, help='The step gap to read the data, default=1''\n\n', metavar='')
+parser.add_argument('--needFrame', default=0, type=int, help='Only read desired frames, default=0 (read through all frames)''\n\n', metavar='')
+parser.add_argument('--frame0', default=-1, type=int, help='If needFrame=1, read frame from [frame0] to [frame1]''\n\n', metavar='')
+parser.add_argument('--frame1', default=-1, type=int, help='If needFrame=1, read frame from [frame0] to [frame1])''\n\n', metavar='')
+parser.add_argument('--ceiling', default=1, type=int, help='Need ceiling of BP-index: [3:nRes*2-1], default=1.\n\tFor stronger contrast, set ceiling=0''\n\n', metavar='')
+parser.add_argument('--intY', default=10, type=int, help='The interval of residue label at Y-axis, default=10.''\n\n', metavar='')
+args = parser.parse_args()
+#----------------------------------------------------------------------------------------------
+fnSeq = args.seq
+STEP = args.step
+needFrame = args.needFrame
+frameI = args.frame0
+frameE = args.frame1
+needCeiling = args.ceiling
+iGap = args.intY
+prefix = args.prefix
+files = args.files
+LEN = args.len
+#----------------------------------------------------------------------------------------------
+idx = files.split('-')
+transcripts = np.arange(int(idx[0]),int(idx[1])+1)
+Frames = [frameI, frameE]
+Frame_gap = STEP
+iframe_extract = 0
+N_lines_left = 20
+#============================================================================================================
+# read the sequence and full-transcribed RNA length form <fasta> file
+Seq = open(fnSeq).readlines()[1].strip()
+print('seq:', Seq)
+nRes_full = len(Seq)
+print('nRes_full:', nRes_full)
+# prepare the Y-axis lable
+Mid = []
+Yaxis = []
+#iGap = (int( (int(nRes/50)-5) /10) + 1)*10
+for i in range(0, nRes_full, iGap):
+    Yaxis.append(Seq[i]+str(i+1))
+    Mid.append(i+0.5)
+# prepare the X-axis lable
+Xaxis = []
+Xloc = []
+i = 0
+gap = int((Frames[1]-Frames[0])/Frame_gap)
+for iTrans in transcripts:
+    if iTrans%10 == 0:
+        Xaxis.append(iTrans)
+        Xloc.append(i)
+    i += gap
+    
+
+#===================================================================================================================================
+#===================================================================================================================================
+# Main(): reading the output files and calculate HBmap
+#===================================================================================================================================
+#===================================================================================================================================
+print('transcripts:', transcripts)
+print('Frames:', Frames)
+print('Frame_gap:', Frame_gap)
+nTranscript = len(transcripts)
+print('nTranscript:', nTranscript)
+nframe_transcript = int((Frames[1]-Frames[0])/Frame_gap)
+print('nframe_transcript:', nframe_transcript)
+Map = np.zeros((nframe_transcript * nTranscript, nRes_full), dtype='int32')
+#==================== ! ! ! ==================== ! ! ! ==================== ! ! ! ==================== ! ! ! ====================
+m = 0
+for iTrans in transcripts:
+    print('iTrans:', iTrans)
+    fnOut = prefix + str(iTrans).zfill(LEN) + '.out'
+    print('processing:', fnOut)
+    #fnTop = PATH + 'ssRNA_' + str(transcripts[ii]).zfill(3) + '.prmtop'
+    lines = open(fnOut).readlines()
+    line_len = len(lines)
+    nnn = -1
+    for i in range(line_len):
+        if lines[i][0:3] == '!!B':
+            #-----------------------------
+            nnn += 1
+            if needFrame:
+                if nnn < Frames[0]:
+                    continue
+                if nnn == Frames[1]:
+                    break
+            #------ 1. read the basepairs ----------------------------------------------------
+            if (nnn-Frames[0])%Frame_gap == iframe_extract:
+                #print(n)
+                nBP = int(lines[i].split(':')[1])
+                #print(nBP)
+                #=============#=============#=============#=============#=============
+                if nBP:
+                    nbpline = int((nBP-1)/10)+1
+                    bpline = ''
+                    for j in range(0, nbpline):
+                        bpline += lines[i+1+j]
+                    #print(bpline)
+                    bps = bpline.split()
+                    bps5 = np.zeros(nBP, dtype='int32')
+                    bps3 = np.zeros(nBP, dtype='int32')
+                    for j in range(nBP):
+                        bps5[j], bps3[j] = map(int, bps[j].split('-'))
+                    #------ 2. fill the HB map ---------------------------------------
+                    NextStem = 1
+                    nStem = bps5[0] + bps3[0]
+                    for j in range(nBP-1):
+                        bp5 = bps5[j]
+                        bp3 = bps3[j]
+                        #print(bp5,bp3)
+                        Map[m][bp5] += nStem
+                        Map[m][bp3] += nStem
+                        if bps5[j+1]-bp5==1 and bp3-bps3[j+1]==1:
+                            NextStem = 0
+                        else:
+                            NextStem = 1
+                        if NextStem:
+                            nStem = bps5[j+1] + bps3[j+1]
+                    #---------------
+                    #print('----')
+                    Map[m][bps5[-1]] += nStem
+                    Map[m][bps3[-1]] += nStem
+                    m += 1
+                else:
+                    m += 1
+                #=============#=============#=============#=============#=============
+                # mark the boundary of this transcript
+                if iTrans<transcripts[-1]:
+                    Map[m-1][iTrans] = 3
+    
+#===== 3. process the HB map for better visualization =====================================
+print('Map.max()=', Map.max(), 'at Max', np.unravel_index(np.argmax(Map, axis=None), Map.shape))
+# exclude Triple-BP
+Map[Map>2*nRes_full] = 0
+# transpose the Map
+Map = Map.T
+Map[Map==0] += Map.max()+1
+print('length of Map', len(Map), 'x', len(Map[0]))
+TITLE = '{0}({1} nt): {2} traj x {3} frame, transcripts: {4} nt -- {5} nt'.format(fnSeq, nRes_full, nTranscript, nframe_transcript, transcripts[0], transcripts[-1])
+MapData = Map
+#===== 4. normalize the color: [3, 2*nRes_full-1] =================================================
+plt.figure(figsize=(10,8))
+if needCeiling:
+    MapData[MapData==MapData.max()] = nRes_full*2-1
+    #MapData[0][0] = 111
+    MapData[0][1] = 3
+#===== 5. draw ====================================================================================
+plt.pcolor(MapData, cmap=plt.cm.CMRmap, edgecolors='none')#gnuplot2
+plt.xlabel("Transcript length (nt)", fontsize=30)
+plt.ylabel("Residue", fontsize=30) #energy / kcal/mol #temperature / K
+plt.yticks(Mid, Yaxis, rotation=0, fontsize=20)
+plt.xticks(Xloc, Xaxis, rotation=0, fontsize=20)
+#plt.yticks([])
+#plt.xticks([])
+plt.title(TITLE, fontsize=15)
+#plt.colorbar()
+#plt.subplots_adjust(left=0.1, right=1.0, top=0.90, bottom=0.1)
+plt.show()

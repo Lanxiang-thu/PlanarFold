@@ -1,0 +1,80 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import os
+import sys
+from math import *
+import numpy as np
+import netCDF4 as nc
+import argparse
+#====== Main ==================================================================
+#parser = argparse.ArgumentParser(description="PlanarFold.v1 2025")
+parser = argparse.ArgumentParser(description='='*60+"\n  *** extractFrameIntoInpcrd ***\n\n\tExtract coordinates of a chosen frame from trajectory\n"+'='*60, formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument('-x', type=str, help='Trajectory file; e.g. run.nc\n\n', metavar='')
+parser.add_argument('-r', type=str, help='Restart file; e.g. run.rst\n\n', metavar='')
+parser.add_argument('-c', default='ssRNA_extract.inpcrd', type=str, help='The coordinate file to be generated; default = ''ssRNA_extract.inpcrd''\n\n', metavar='')
+#parser.add_argument('--iFrame', default=0, type=int, help='The index of the frame to be extracted, default=0 (the first frame)''\n\n', metavar='')
+parser.add_argument('--iFrame', default=-1, type=int, help='If trajectory file is used, extract the frame[iFrame] from; default=-1(last frame)\n\n', metavar='')
+
+# read the filenames
+args = parser.parse_args()
+#----------------------------------------------------------------------------------------------
+fncrd = args.c
+fntrj = args.x
+fnrst = args.r
+iframe = args.iFrame
+#=====================================================================
+if fntrj == None:
+    iRst = 1
+    fnRst = fnrst
+    print('\tNote: extract coordinates form restart file')
+if fnrst == None:
+    iRst = 0
+    fnRst = fntrj
+    print('\tNote: extract coordinates form trajectory file')
+if fnrst == None and fntrj == None:
+    print('\tError: at least restart or trajectory file should be specified')
+    sys.exit(1)
+if fnrst != None and fntrj != None:
+    print('\tError: either restart or trajectory file should be specified')
+    sys.exit(1)
+#=====================================================================
+# use netCDF4 to read nc files
+print('\tReading:', fnRst)
+traj = nc.Dataset(fnRst)  # get the coordinate and velocity array
+#print('\ttraj', traj)
+#-------------------------------------------------------------------
+if iRst:
+    crds = np.array(traj.variables['coordinates'][:,:])
+    nRes = len(crds)
+    vels = np.array(traj.variables['velocities'][:,:])
+    #print('vels:', vels)
+    # the vel of the nascent residue is set zero
+    vels = np.concatenate((vels, np.zeros((1,3))))
+else:
+    crds = np.array(traj.variables['coordinates'][iframe][:][:,:])
+    # add one more nascent residue
+    nRes = len(crds)
+    # no velocities are recorded in trajectory file, asign zero vel
+    vels = np.zeros((nRes,3))
+#print('crds:', crds)
+print('\tnRes=', nRes)
+#-----------------------------------------
+fo = open(fncrd, "w")
+fo.write('defaulte_name\n')
+fo.write('{0:6d}\n'.format(nRes))
+# coordinates
+for i in range(nRes):
+    #fo.write('{0:12.7f}{1:12.7f}{2:12.7f}'.format(crds[i][0], crds[i][1], crds[i][2]))
+    fo.write('{0:12f}{1:12f}{2:12f}'.format(crds[i][0], crds[i][1], 0.0))    
+    if i%2==1:
+        fo.write('\n')
+if nRes%2==1:
+    fo.write('\n')
+# velocities
+for i in range(nRes):
+    fo.write('{0:12.7f}{1:12.7f}{2:12.7f}'.format(vels[i][0], vels[i][1], 0.0))
+    if i%2==1:
+        fo.write('\n')
+if nRes%2==1:
+    fo.write('\n')
+fo.close()
+print('Written:\n', fncrd)

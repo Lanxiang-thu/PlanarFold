@@ -1,0 +1,197 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import os
+import sys
+import numpy as np
+#import pytraj as pt # pytraj from AMBER's tool
+import netCDF4 as nc
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+from sklearn.neighbors import KernelDensity
+import argparse
+
+#====== Main ====================================================================================================
+parser = argparse.ArgumentParser(description='='*80+"\n  *** pca_Decoys_cmap ***\n\n\t Principle component analysis of trajectory using contact map\n"+'='*80, formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument('-p', default='ssRNA.prmtop', type=str, help='Topology file; default = ''ssRNA.prmtop''\n\n', metavar='')
+parser.add_argument('-x', default='run.nc', type=str, help='Trajectory file; default = ''run.nc\n\n', metavar='')
+parser.add_argument('--dots', default='run.dots', type=str, help='Output file with secondary structure and potential energy; default = ''run.dots''\n\n', metavar='')
+parser.add_argument('--bcut', default=14.0, type=float, help='The cutoff for contact map, default=14.0''\n\n', metavar='')
+parser.add_argument('--minLoop', default=4, type=int, help='The minimal apical, default=4 (tetraloop)''\n\n', metavar='')
+parser.add_argument('--step', default=1, type=int, help='The step gap to read the data, default=1''\n\n', metavar='')
+parser.add_argument('--needFrame', default=0, type=int, help='Only read desired frames, default=0 (read through all frames)''\n\n', metavar='')
+parser.add_argument('--frame0', default=-1, type=int, help='If needFrame=1, read frame from [frame0] to [frame1]''\n\n', metavar='')
+parser.add_argument('--frame1', default=-1, type=int, help='If needFrame=1, read frame from [frame0] to [frame1])''\n\n', metavar='')
+parser.add_argument('-s', default=10, type=int, help='Sphere size of scatter plot, default=10''\n\n', metavar='')
+parser.add_argument('--bdwidth', default=0.005, type=float, help='The bandwidth for kernel density, default=0.005''\n\n', metavar='')
+parser.add_argument('--temp', default=283, type=float, help='The simulation temperature (for pmd calculation), default=283''\n\n', metavar='')
+args = parser.parse_args()
+#-----------------------------------------------------------------------------------------------------------------
+fntop = args.p
+fncrd = args.x
+fnDots = args.dots
+bcut = args.bcut
+minLoop = args.minLoop
+STEP = args.step
+needFrame = args.needFrame
+frame0 = args.frame0
+frame1 = args.frame1
+Sphere_size = args.s
+BANDWIDTH = args.bdwidth
+Temp =args.temp
+#------------------------------------------------#------------------------------------------------------------
+if needFrame == 1:
+    if frame0 == -1 or frame1 == -1:
+        print("Error: If needFrame=1, frame0 and frame1 must be specified")
+        sys.exit(1)
+else:
+    frame0 = 0
+print('frame0:', frame0, 'frame1:', frame1, 'STEP:', STEP)
+
+#------------------------------------------------------------------------
+#       A   U   G   C
+#   A   0   2   0   0
+#   U   2   0   2   0
+#   G   0   2   0   3
+#   C   0   0   3   0
+#------------------------------------------------------------------------
+RES = ['A', 'U', 'G', 'C']
+BPtable = [0, 4, 0, 0,
+           4, 0, 4, 0,
+           0, 4, 0, 6,
+           0, 0, 6, 0]
+def getRes(res):
+    for i in range(4):
+        if res==RES[i]:
+            return i
+#------------------------------------------------#------------------------------------------------------------
+lines = open(fnDots).readlines()
+F1s = []
+for i in range(1, len(lines)):
+    f1 = lines[i].split()[1]
+    F1s.append(float(f1))
+F1s = np.array(F1s)
+nCand = len(F1s)
+print('fnDots:', fnDots)
+print('nCand:', nCand)
+#---------------------- get the sequence, in case of distinguish residues -----------------------------------
+seq_line = ''
+lines = open(fntop).readlines()
+#print(lines)
+for i in range(len(lines)):
+    if lines[i][0:15] == '%FLAG ATOM_NAME':
+        for j in range(i+2, len(lines)):
+            if lines[j][0:1] == '%':
+                break
+            else:
+                seq_line += lines[j]
+        break
+seq = seq_line.split()
+print('seq:\n', seq)
+#-------------------------------------------------------------------------------------------------------------
+#traj = pt.iterload(fncrd, fntop)
+traj = nc.Dataset(fncrd).variables['coordinates']   # get the coordinates array
+nframe = len(traj)
+if needFrame == 0:
+    frame1 = nframe
+nRes = len(traj[0][:])
+print('nframe=', nframe, 'nRes=', nRes)
+nnframe = int((frame1-frame0)/STEP)
+if nnframe*nRes > 5000 * 500:
+    print("Error: constructing the contact map of {0} frame of a {1}-nt RNA will be TOO slow, aborted !".format(nnframe, nRes))
+    sys.exit(1)
+elif nnframe*nRes > 2000 * 400:
+    print("Warning: constructing the contact map of {0} frame of a {1}-nt RNA will be VERY slow".format(nnframe, nRes))
+elif nnframe*nRes > 1000 * 200:
+    print("Note: constructing the contact map of {0} frame of a {1}-nt RNA will be slow".format(nnframe, nRes))
+
+bcut2 = bcut * bcut
+data = []
+print("Constructing the contact map ...")
+for n in range(frame0, frame1, STEP):
+    Map = 0.0 * np.ones((nRes, nRes))
+    crd = traj[n][:]
+    for i in range(nRes-minLoop+1):
+        for j in range(i+minLoop+1, nRes):
+            dist = np.sum(np.square(crd[i]-crd[j]))
+            if dist > bcut2:
+                Map[i][j] = 0.0
+            else:
+                res5 = getRes(seq[i])
+                res3 = getRes(seq[j])
+                dimer = res5 * 4 + res3
+                if BPtable[dimer]:
+                    Map[i][j] = BPtable[dimer]/dist
+                    Map[j][i] = Map[i][j]
+                    #Map[i][j] = 1.0/dist
+                    #Map[j][i] = Map[i][j]
+                else:
+                    Map[i][j] = 0.0
+                '''
+                Map[i][j] = 1.0/dist
+                Map[j][i] = Map[i][j]
+                '''
+    #------------------------------------------
+    half_cmap = Map[0]
+    for i in range(1, nRes):
+        half_cmap = np.concatenate((half_cmap, Map[i,i:]))
+    data.append(half_cmap)
+F1s = F1s[frame0:frame1:STEP]
+nCand = len(F1s)
+print('nCand:', nCand)
+#=============================================================================================================
+print('Performing PCA ...')
+data = np.array(data)
+pca = PCA(n_components=2) # Reduce into 2-D
+pca.fit(data)
+#PCA(n_components=2)
+data_projected = pca.transform(data).T #
+ratio = pca.explained_variance_ratio_
+print(ratio) # contribution ratio
+print(pca.explained_variance_)
+#=============================================================================================================
+plt.subplot(1,3,1)
+plt.scatter(data_projected[0], data_projected[1], s=Sphere_size, cmap=plt.cm.nipy_spectral_r, c=F1s, alpha=0.7)
+plt.xlabel('PC1 ({0:.1f}%)'.format(ratio[0]*100), fontsize=15)
+plt.ylabel('PC2 ({0:.1f}%)'.format(ratio[1]*100), fontsize=15)
+#plt.title('{0}nt: {1} decoys (cutoff={2:.1f})'.format(nRes, nCand, bcut), fontsize=15)
+plt.clim(0.0, 1.0)
+#plt.colorbar(shrink=0.8, aspect=30)
+cbar = plt.colorbar(shrink=0.8, aspect=30, pad=0.02)
+cbar.ax.tick_params(length=2, labelsize=15)
+
+#=============================================================================================================
+plt.subplot(1,3,2)
+plt.plot(data_projected[0], data_projected[1], lw=0.3, color='gray', alpha=0.5, marker=None, zorder=1)
+plt.scatter(data_projected[0], data_projected[1], s=Sphere_size, cmap=plt.cm.nipy_spectral_r, c=np.arange(len(F1s)), alpha=0.7)
+plt.xlabel('PC1 ({0:.1f}%)'.format(ratio[0]*100), fontsize=15)
+plt.ylabel('PC2 ({0:.1f}%)'.format(ratio[1]*100), fontsize=15)
+plt.title('{0}nt: {1} decoys (cutoff={2:.1f})'.format(nRes, nCand, bcut), fontsize=20, pad=20)
+#plt.clim(0.0, 1.0)
+#plt.colorbar(shrink=0.8, aspect=30)
+cbar = plt.colorbar(shrink=0.8, aspect=30, pad=0.02)
+cbar.ax.tick_params(length=2, labelsize=15)
+
+#=============================================================================================================
+plt.subplot(1,3,3)
+#BANDWIDTH = 0.005
+#print('data_projected:', data_projected)
+kde = KernelDensity(kernel='gaussian', bandwidth=BANDWIDTH).fit(data_projected.T)
+density = kde.score_samples(data_projected.T)
+#density /= len(density)
+#density -= density.min()
+kB = 1.380649E-23
+#Temp = 300.0
+NA = 6.02E23
+density = - kB * Temp * (np.log(density) - np.log(density.max())) * NA / 1000.0
+plt.scatter(data_projected[0], data_projected[1], c=density, cmap=plt.cm.cividis, s=Sphere_size, alpha=1.0)
+plt.xlabel('PC1 ({0:.1f}%)'.format(ratio[0]*100), fontsize=15)
+plt.ylabel('PC2 ({0:.1f}%)'.format(ratio[1]*100), fontsize=15)
+#plt.colorbar(shrink=0.8, aspect=30)
+cbar = plt.colorbar(shrink=0.8, aspect=30, pad=0.02)
+cbar.ax.tick_params(length=2, labelsize=15)
+
+#plt.xlim(-0.06, 0.06)
+#plt.ylim(-0.04, 0.05)
+#plt.clim(0.0, 1.5)
+plt.subplots_adjust(left=0.05, right=1.0, top=0.7, bottom=0.25, wspace=0.1)
+#plt.suptitle('{0}nt: {1} decoys (cutoff={2:.1f})'.format(nRes, nCand, bcut), fontsize=15)
+plt.show()

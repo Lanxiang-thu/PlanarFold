@@ -1,0 +1,280 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import os
+import sys
+import numpy as np
+import netCDF4 as nc
+from math import *
+import matplotlib.pyplot as plt
+import argparse
+
+#====== Main ====================================================================================================
+parser = argparse.ArgumentParser(description='='*90+"\n  *** plot_Frames ***\n\n\tPlot the exact coordinates and secondary structure of a frame or several frames\n"+'='*90, formatter_class=argparse.RawTextHelpFormatter)
+
+parser.add_argument('-o', default='run.out', type=str, help='Energy output file; default = ''run.out''\n\n', metavar='')
+parser.add_argument('-p', default='ssRNA.prmtop', type=str, help='Topology file; default = ''ssRNA.prmtop''\n\n', metavar='')
+parser.add_argument('-x', default='run.nc', type=str, help='Trajectory file; default = ''run.nc''\n\n', metavar='')
+parser.add_argument('--needEnergy', default=0, type=int, help='Shown energies of the frame(s), default=0''\n\n', metavar='')
+parser.add_argument('--frame0', type=int, help='If needFrame=1, read frame from [frame0] to [frame1]''\n\n', metavar='')
+parser.add_argument('--frame1', type=int, help='If needFrame=1, read frame from [frame0] to [frame1])''\n\n', metavar='')
+parser.add_argument('--step', default=1, type=int, help='The step gap to read the data, default=1''\n\n', metavar='')
+parser.add_argument('--needRotate', default=0, type=int, help='Pose the first basepair at parallel direction, default=1''\n\n', metavar='')
+parser.add_argument('-s', default=5, type=int, help='Sphere size of residue, default=5\n\tset large "s" for short RNAs and large "s" for long RNAs''\n\n', metavar='')
+parser.add_argument('--ref', type=str, help='Reference secondary structure file (.ct/.dbn/.dot format)\n\n', metavar='')
+parser.add_argument('--subplot', type=str, help='The row and column of subplot, default "1-N" \n\n', metavar='')
+args = parser.parse_args()
+#----------------------------------------------------------------------------------------------
+fnTop = args.p
+fnOut = args.o
+fnCrd = args.x
+needEnergy = args.needEnergy
+needRotate = args.needRotate
+if args.frame0==None or args.frame0==None:
+    print("Error: must describe the starting and ending frames: --frame0 and --frame1")
+    sys.exit(1)
+frames = np.arange(args.frame0, args.frame1, args.step)
+frames -= 1
+if args.subplot==None:
+    SUBPLOT = [1,int((args.frame1-args.frame0-1)/args.step)+1]
+else:
+    row, column = args.subplot.split('-')
+    SUBPLOT = [int(row), int(column)]
+print('SUBPLOT = ', SUBPLOT)
+FONTSIZE = 10
+Sphere_size = args.s
+fnBP = args.ref
+#=====================================================================
+print('fnCrd:', fnCrd)
+#=====================================================================
+if fnBP == None:
+    NeedCT = 0
+else:
+    NeedCT = 1
+#=========================================================================================
+def CalculateF1(BPlist_NS, BPlist, nRes):
+    #--------------------------------------------
+    map_NS = np.zeros((nRes,nRes), dtype='int16')
+    map_pd = np.zeros((nRes,nRes), dtype='int16')
+    # construct the contact map
+    for i in range(nRes):
+        if BPlist_NS[i]:
+            map_NS[i, BPlist_NS[i]-1] = 1
+        if BPlist[i]:
+            map_pd[i, BPlist[i]-1] = 1
+    # compare
+    NS_paired = map_NS==1
+    NS_unpaired = map_NS==0
+    pd_paired = map_pd==1
+    pd_unpaired = map_pd==0
+    #-----------
+    nTP = np.sum(np.logical_and(NS_paired, pd_paired))
+    nTN = np.sum(np.logical_and(NS_unpaired, pd_unpaired))
+    nFP = np.sum(np.logical_and(NS_unpaired, pd_paired))
+    nFN = np.sum(np.logical_and(NS_paired, pd_unpaired))
+    #------------------------------------
+    #print(nTP, nFP, nTN, nFN)
+    if nTP+nFN:
+        SN = nTP / (nTP+nFN)
+    else:
+        SN = 0
+    if nTP+nFP:
+        PR = nTP / (nTP+nFP)
+    else:
+        PR = 0
+    if PR+SN:
+        F1 = 2.0*PR*SN / (PR+SN)
+    else:
+        F1 = 0
+    #------------------------------------
+    return F1
+
+#======= C O L O R ===========================================================================================
+RES = ['A', 'U', 'G', 'C']
+COLORS = ['#FF2600', '#00B200', '#FFCE00', '#0096FF']
+COLORS = ['#EC6A5C', '#75D701', '#EFDC05', '#4F86C6']
+def getRes(res):
+    for i in range(4):
+        if res==RES[i]:
+            return i
+#===========================================================
+def DB_2_BPlist(dots):
+    state = []
+    bplist = np.zeros(nRes, dtype='int32')
+    for i in range(nRes):
+        if dots[i]=='(':
+            state.append(i)
+        elif dots[i]==')':
+            bplist[state[-1]] = i+1
+            bplist[i] = state[-1]+1
+            state.pop(-1)
+    return bplist
+    
+#==============================================================================================================
+# PlotConformation
+#==============================================================================================================
+def PlotConformation(fnout, nRes, BPlist_NS, crd, frame, SUBPLOT, iplot, NeedCT, needRotate, Sphere_size):
+    plt.subplot(SUBPLOT[0], SUBPLOT[1], iplot+1)
+    #---- get the base-pairs info --------------------------------------
+    lines = open(fnout).readlines()
+    bps = []
+    bps_isNS = []
+    n = -1
+    BPlist = np.zeros(nRes, dtype='int16')
+
+    for i in range(len(lines)):
+        if lines[i][0:3] == '//-':
+            n += 1
+            if n==frame:
+                if needEnergy:
+                    #-------------------------------------------
+                    Frame = int(lines[i+1].split()[1])
+                    Temperature = float(lines[i+1].split()[3])
+                    eRestraint  = float(lines[i+1].split()[5])
+                    eBond       = float(lines[i+2].split()[1])
+                    eAngle      = float(lines[i+2].split()[3])
+                    eStacking   = float(lines[i+2].split()[5])
+                    eVdw        = float(lines[i+3].split()[1])
+                    eElec       = float(lines[i+3].split()[3])
+                    eBasePair   = float(lines[i+3].split()[5])
+                    Ektot       = float(lines[i+4].split()[1])
+                    Eptot       = float(lines[i+4].split()[3])
+                    Etot        = float(lines[i+4].split()[5])
+                    #-------------------------------------------
+                nbp         = int(lines[i+5].split(':')[1])
+                bplines = ''
+                nline = int((nbp-1)/10) + 1
+                for j in range(nline):
+                    bplines += lines[i+j+6]
+                bplines = bplines.split()
+                for bp in bplines:
+                    bp5, bp3 = bp.split('-')
+                    bp5, bp3 = int(bp5), int(bp3)
+                    BPlist[bp5] = bp3 + 1
+                    BPlist[bp3] = bp5 + 1
+                    bps.append([bp5, bp3])
+                    if NeedCT:
+                        if BPlist_NS[bp5] == bp3 + 1:
+                            bps_isNS.append(1)
+                        else:
+                            bps_isNS.append(0)
+                    else:
+                        bps_isNS.append(1)
+                break
+
+    print('n=', n, 'frame=', frame)
+    print('nbp=', nbp, 'bps:', bps)
+    dbn = ['.'] * nRes
+    for bp in bps:
+        dbn[bp[0]] = '('
+        dbn[bp[1]] = ')'
+    print('dbn:', ''.join(dbn))
+
+    #-----------------------------------------------------------------------
+    # calculate F1-score
+    #-----------------------------------------------------------------------
+    if NeedCT:
+        F1 = CalculateF1(BPlist_NS, BPlist, nRes)
+    #-----------------------------------------------------------------------
+    #------ to place the molecule Upright !---------------------------------
+    #-----------------------------------------------------------------------
+    if needRotate and nbp:
+        # move terminal-bp5 to origin
+        crd -= crd[bps[0][0]]
+        # vector of terminal basepair: 5' -> 3'
+        vec5t3 = crd[bps[0][1]] - crd[bps[0][0]]
+        costheta = vec5t3[0] / np.sqrt(np.sum(np.square(vec5t3)))
+        theta = acos(costheta)
+        print('costheta', costheta, 'theta', theta)
+        if vec5t3[1] > 0:
+            theta = -theta
+        cosT = cos(theta)
+        sinT = sin(theta)
+        RotMat = np.array([[cosT,-sinT], [sinT,cosT]])
+        crd = np.matmul(RotMat,crd.T).T
+        # up
+        vec55 = crd[bps[1][0]] - crd[bps[0][0]]
+        if vec55[1]<0:   # flip Y
+            crd *= [1,-1]
+    #-------- plot the base-pairs ------------------------
+    BP_Linestyle = ['solid', 'solid']
+    BP_Color = ['red', 'gray']
+    for i in range(nbp):
+        plt.plot(crd[bps[i][0]:bps[i][1]+1:bps[i][1]-bps[i][0],0], crd[bps[i][0]:bps[i][1]+1:bps[i][1]-bps[i][0],1], c=BP_Color[bps_isNS[i]], linestyle=BP_Linestyle[bps_isNS[i]], linewidth=1)
+    #--- marker the 5' bead-----
+    plt.scatter(crd[0][0], crd[0][1], marker='x', color = 'black', s=10*Sphere_size)
+    #------------ plot the bonds --------------------
+    plt.plot(crd[:, 0], crd[:, 1], c = 'black', linewidth=1)
+    #------------ plot the residues --------------------
+    for i in range(nRes):
+        plt.plot(crd[i][0], crd[i][1], marker='o', color = colors[i], linewidth=1, markersize=Sphere_size, mec='gray')
+    if NeedCT:
+        if needEnergy:
+            plt.title("'{0}' at frame-{1:d}, F1={2:.3f} \n Eptot={3:.2f}, EvdW={4:.2f}\n Eelec={5:.2f}, Ebp={6:.2f}".format(
+                    fnBP, frame, F1, Eptot, eVdw, eElec, eAngle+eStacking+eBasePair), fontsize=FONTSIZE)
+        else:
+            plt.title("'{0}' at frame-{1:d}, F1={2:.3f} \n".format(
+                    fnBP, frame, F1), fontsize=FONTSIZE)
+    else:
+        if needEnergy:        
+            plt.title("'{0}nt' at frame-{1:d} T={2:.1f}\n Eptot={3:.2f}, EvdW={4:.2f}\n Eelec={5:.2f}, Ebp={6:.2f}".format(
+                    nRes, frame, Temperature, Eptot, eVdw, eElec, eAngle+eStacking+eBasePair), fontsize=FONTSIZE)
+        else:
+            plt.title("'{0}nt' at frame-{1:d}\n".format(
+                    nRes, frame), fontsize=FONTSIZE)
+    #plt.ylim(-350, 350)    
+    plt.axis('equal')
+    plt.axis('off')
+    #plt.ylim(-350, 350)
+    
+#==============================================================================================================
+# M A I N
+#==============================================================================================================
+
+# use netCDF4 to read nc files
+traj = nc.Dataset(fnCrd).variables['coordinates']   # get the coordinates array
+nframe = len(traj)
+nRes = len(traj[0][:])
+print('nframe=', nframe, 'nRes=', nRes, 'frames=', frames)
+
+#---- get the sequence info -----------------------------------------
+seq_line = ''
+lines = open(fnTop).readlines()
+for i in range(len(lines)):
+    if lines[i][0:15] == '%FLAG ATOM_NAME':
+        for j in range(i+2, len(lines)):
+            if lines[j][0:1] == '%':
+                break
+            else:
+                seq_line += lines[j]
+        break
+seq = seq_line.replace('\n', '')
+seq = seq.replace(' ', '')
+print('seq:\n', seq)
+#---- assign each res with correspnding color ------------------------
+colors = []
+for i in range(nRes):
+    for j in range(4):
+        if seq[i]==RES[j]:
+            colors.append(COLORS[j])
+            break
+#---- get the Native-State base-pairs info --------------------------------------
+BPlist_NS = np.zeros(nRes, dtype=np.int16)
+if NeedCT:
+    lines = open(fnBP).readlines()
+    if fnBP.split('.')[1] == 'ct':
+        for i in range(nRes):
+            j = int(lines[i+1].split()[4])
+            if j:#if j!=0, then it's paired
+                BPlist_NS[i] = j
+    elif fnBP.split('.')[1] == 'dbn' or fnBP.split('.')[1] == 'dot':
+        DB_NS = lines[1]
+        BPlist_NS = DB_2_BPlist(DB_NS)
+            
+#==============================================================================================================
+print('frames:', frames)
+iplot = 0
+for frame in frames:
+    crd = np.array(traj[frame, :, 0:2]) # only extract the 'x,y' coordinates
+    PlotConformation(fnOut, nRes, BPlist_NS, crd, frame, SUBPLOT, iplot, NeedCT, needRotate, Sphere_size)
+    iplot += 1
+plt.subplots_adjust(left=0.01, right=0.99, top=0.85, bottom=0.0, wspace=0.1, hspace=0.5)
+plt.show()

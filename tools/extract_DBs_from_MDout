@@ -1,0 +1,155 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import os
+import sys
+import numpy as np
+import argparse
+#====== Main ====================================================================================================
+parser = argparse.ArgumentParser(description='='*80+"\n  *** extract_DBs_from_MDout ***\n\n\t Extract the base-pairs and potential energy from energy output file\n\t and store them into dots-and-brackets format\n"+'='*80, formatter_class=argparse.RawTextHelpFormatter)
+
+parser.add_argument('-o', default='run.out', type=str, help='Energy output file; default = ''run.out''\n\n', metavar='')
+parser.add_argument('--ref', type=str, help='Reference secondary structure file (.ct/.dbn/.dot format)\n\n', metavar='')
+parser.add_argument('--dots', default='run.dots', type=str, help='Output file with secondary structure and potential energy; default = ''run.dots''\n\n', metavar='')
+parser.add_argument('--step', default=1, type=int, help='The step gap to read the data, default=1''\n\n', metavar='')
+parser.add_argument('--needFrame', default=0, type=int, help='Only read desired frames, default=0 (read through all frames)''\n\n', metavar='')
+parser.add_argument('--frame0', default=-1, type=int, help='If needFrame=1, read frame from [frame0] to [frame1]''\n\n', metavar='')
+parser.add_argument('--frame1', default=-1, type=int, help='If needFrame=1, read frame from [frame0] to [frame1])''\n\n', metavar='')
+args = parser.parse_args()
+#-----------------------------------------------------------------------------------------------------------------
+fnOPT = args.o
+fnBP = args.ref
+fnDots = args.dots
+STEP = args.step
+needFrame = args.needFrame
+frame0 = args.frame0
+frame1 = args.frame1
+#-----------------------------------------------------------------------------------------------------------------
+if fnBP == None:
+    print("Error: the reference secondary structure file must be specified '--ref' ")
+    sys.exit(1)
+if needFrame == 1:
+    if frame0 == -1 or frame1 == -1:
+        print("Error: If needFrame=1, frame0 and frame1 must be specified")
+        sys.exit(1)
+else:
+    frame0 = 0
+    frame1 = 1000000
+print('frame0:', frame0, 'frame1:', frame1, 'STEP:', STEP)
+#================================================================================
+def CalculateF1(BPlist_NS, BPlist, nRes):
+    #--------------------------------------------
+    map_NS = np.zeros((nRes,nRes), dtype='int16')
+    map_pd = np.zeros((nRes,nRes), dtype='int16')
+    # construct the contact map
+    for i in range(nRes):
+        if BPlist_NS[i]:
+            map_NS[i, BPlist_NS[i]-1] = 1
+        if BPlist[i]:
+            map_pd[i, BPlist[i]-1] = 1
+    # compare
+    NS_paired = map_NS==1
+    NS_unpaired = map_NS==0
+    pd_paired = map_pd==1
+    pd_unpaired = map_pd==0
+    #-----------
+    nTP = np.sum(np.logical_and(NS_paired, pd_paired))
+    nTN = np.sum(np.logical_and(NS_unpaired, pd_unpaired))
+    nFP = np.sum(np.logical_and(NS_unpaired, pd_paired))
+    nFN = np.sum(np.logical_and(NS_paired, pd_unpaired))
+    
+    #------------------------------------
+    #print(nTP, nFP, nTN, nFN)
+    if nTP+nFN:
+        SN = nTP / (nTP+nFN)
+    else:
+        SN = 0
+    if nTP+nFP:
+        PR = nTP / (nTP+nFP)
+    else:
+        PR = 0
+    if PR+SN:
+        F1 = 2.0*PR*SN / (PR+SN)
+    else:
+        F1 = 0
+    #------------------------------------
+    return F1
+#===========================================================
+def DB_2_BPlist(dots):
+    state = []
+    nRes = len(dots)
+    bplist = np.zeros(nRes, dtype='int32')
+    for i in range(nRes):
+        if dots[i]=='(':
+            state.append(i)
+        elif dots[i]==')':
+            bplist[state[-1]] = i+1
+            bplist[i] = state[-1]+1
+            state.pop(-1)
+    return bplist
+#================================================================================
+# Main
+#================================================================================
+#================================================================================
+#------- 1.Read the Native State 2D structure -----------------------------------
+print('Output:', fnOPT)
+lines = open(fnBP).readlines()
+if fnBP.split('.')[1] == 'ct':
+    seq = ''
+    nRes = int(lines[0].split()[0])
+    BPlist_NS = np.zeros(nRes, dtype='int32')
+    for i in range(nRes):
+        j = int(lines[i+1].split()[4])
+        seq += lines[i+1].split()[1]
+        if j:#if j!=0, then it's paired
+            BPlist_NS[i] = j
+elif fnBP.split('.')[1] == 'dbn' or fnBP.split('.')[1] == 'dot':
+    DB_NS = lines[1]
+    seq = lines[0].strip()
+    BPlist_NS = DB_2_BPlist(DB_NS)
+nRes = len(seq)
+#------------------------------------------------------------------------------------
+fo = open(fnDots, "w")
+fo.write(seq + ' : F1-score : Eptot\n')
+#------------------------------------------------------------------------------------
+lines = open(fnOPT).readlines()
+line_len = len(lines)
+#--------------------------------------------------------
+#------- 3.Read the Basepairing info and calculate the F1 score ----
+nCand = 0
+n = 0
+for i in range(line_len):
+    if lines[i][0:2] == '//':
+        if n<frame0:
+            n += 1
+            continue
+        if n==frame1:
+            break
+        if STEP>1:
+            if (n-frame0)%STEP:
+                n += 1
+                continue
+        n += 1
+        nCand += 1
+        Eptot = float(lines[i+4].split()[3])
+        dots = ['.'] * nRes
+        nBP = int(lines[i+5].split(':')[1])
+        nline = int((nBP-1)/10) + 1
+        bpline = ''
+        if nBP:
+            for j in range(nline):
+                bpline += lines[i+j+6]
+            bps = bpline.split()
+            Bplist = np.zeros(nRes, dtype='int32')
+            for j in range(len(bps)):
+                #print(bps[j])
+                bi, bj = bps[j].split('-')
+                bi, bj = int(bi), int(bj)
+                Bplist[bi] = bj + 1
+                Bplist[bj] = bi + 1
+                dots[bi] = '('
+                dots[bj] = ')'
+            f1_score = CalculateF1(BPlist_NS, Bplist, nRes)
+        else:
+            f1_score = 0.0
+        fo.write(''.join(dots) + '   %6.4lf'%f1_score + '   ' + '%.4lf'%Eptot + '\n')
+fo.close()
+print('nCand: %5d'%nCand, 'written:', fnDots)

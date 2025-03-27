@@ -1,0 +1,198 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import argparse
+
+#====== Main ====================================================================================================
+parser = argparse.ArgumentParser(description='='*80+"\n  *** map_PlanarFold_BP ***\n\n\tMap the base-pairs along the trajectory\n"+'='*80, formatter_class=argparse.RawTextHelpFormatter)
+
+parser.add_argument('-o', default='run.out', type=str, help='Energy output file; default = ''run.out''\n\n', metavar='')
+parser.add_argument('-p', default='ssRNA.prmtop', type=str, help='Topology file; default = ''ssRNA.prmtop''\n\n', metavar='')
+parser.add_argument('--iMulti', default=0, type=int, help='Multiple energy files will be read, default=0 (single file)''\n\n', metavar='')
+parser.add_argument('--prefix', type=str, help='If iMulti=1, the energy filenames will be "prefixNNN.out"\n\n', metavar='')
+parser.add_argument('--files',type=str, help='An array of filename index. Indeces should be segmented with "," and no space, example: --files 1,2,4-7,9 ''\n\n', metavar='')
+parser.add_argument('--len', default=3, type=int, help='The lenght file index number, is default = 3, (example: prefix001.out)\n\n', metavar='')
+parser.add_argument('--step', default=1, type=int, help='The step gap to read the data, default=1''\n\n', metavar='')
+parser.add_argument('--needFrame', default=0, type=int, help='Only read desired frames, default=0 (read through all frames)''\n\n', metavar='')
+parser.add_argument('--frame0', default=-1, type=int, help='If needFrame=1, read frame from [frame0] to [frame1]''\n\n', metavar='')
+parser.add_argument('--frame1', default=-1, type=int, help='If needFrame=1, read frame from [frame0] to [frame1])''\n\n', metavar='')
+parser.add_argument('--ceiling', default=1, type=int, help='Need ceiling of BP-index: [3:nRes*2-1], default=1.\n\tFor stronger contrast, set ceiling=0''\n\n', metavar='')
+parser.add_argument('--intY', default=10, type=int, help='The interval of residue label at Y-axis, default=10.''\n\n', metavar='')
+args = parser.parse_args()
+#----------------------------------------------------------------------------------------------
+fnOut = args.o
+fnPrm = args.p
+STEP = args.step
+needFrame = args.needFrame
+frameI = args.frame0
+frameE = args.frame1
+needCeiling = args.ceiling
+N_lines_left = 20
+iGap = args.intY
+iMulti = args.iMulti
+prefix = args.prefix
+files = args.files
+LEN = args.len
+
+# ------------------------------------------------------------------------------------------------------------
+if iMulti == 1:
+    if prefix == None:
+        print("Error: if iMulti=1, the prefix must be specified")
+        sys.exit(1)
+    if files == None:
+        print("Error: if iMulti=1, the file indeces must be specified")
+        sys.exit(1)
+    if files == None:
+        print("Error: if iMulti=1, the file indeces must be specified")
+        sys.exit(1)
+
+
+filenames = []
+if iMulti:
+    idxs = files.split(',')
+    for i in range(len(idxs)):
+        idx = idxs[i]
+        if len(idx.split('-')) == 2:
+            i0, i1 = idx.split('-')
+            i0, i1 = int(i0), int(i1)
+            for j in range(i0,i1+1):
+                filenames.append('{0}{1}.out'.format(prefix, str(j).zfill(LEN)))
+        else:
+            filenames.append('{0}{1}.out'.format(prefix, idx.zfill(LEN)))
+else:
+    nFile = 1
+    filenames.append(fnOut)
+nFile = len(filenames)
+print('nFile:', nFile)
+print('Files:', filenames)
+# ------------------------------------------------------------------------------------------------------------
+# comparison different program
+# ------------------------------------------------------------------------------------------------------------
+# ------------------------------------------------------- 1 --------------------------------------------------
+# --------------------------------------------
+lines = open(fnPrm).readlines()
+nRes = int(lines[6].split()[0])
+nResLine = int((nRes-1)/20) + 1
+SeqLine = ''
+for i in range(nResLine):
+    SeqLine += lines[12+i].rstrip()
+Seq = SeqLine.replace(" ","")
+nRes = len(Seq)
+print('reading:', fnOut)
+print('nRes=', nRes, '\nSequence:', Seq)
+# --------------------------
+Mid = []
+Yaxis = []
+#iGap = (int( (int(nRes/50)-5) /10) + 1)*10
+for i in range(0, nRes, iGap):
+    Yaxis.append(Seq[i]+str(i+1))
+    Mid.append(i+0.5)
+MapData = np.zeros((0, nRes), dtype='int32')
+# =================================================================================
+for nn in range(nFile):
+    print('File:', filenames[nn])
+    lines = open(filenames[nn]).readlines()
+    BP5 = []
+    BP3 = []
+    nBP = []
+    for i in range(0, len(lines)-N_lines_left):
+        if (lines[i][0:3] == '!!B'):
+            nBP.append(lines[i].split()[-1])
+    nBP = np.array(list(map(int, nBP)))
+    nframe = len(nBP)
+    print('nframe=', nframe)
+    #print('nBP=', nBP)
+    if needFrame:
+        Map = np.zeros((int((frameE-frameI)/STEP), nRes), dtype='int32')
+    else:
+        frameI = 0
+        frameE = len(nBP)
+        Map = np.zeros((int(nframe/STEP)+1, nRes), dtype='int32')
+    print('read frame:', frameI, 'to', frameE)
+    print('length of the Map', len(Map), 'x', len(Map[0]))
+    if len(Map)*len(Map[0]) > 100000*500:
+        print('Error: TOO LARGE MAP ! Reconsider larger "--step"!')
+        sys.exit(1)
+    elif len(Map)*len(Map[0]) > 10000*500:
+        print('Warning: the map is TOO LARGE, calculation and plotting will be VERY slow! \nPlease reconsider with a larger "--step"')
+    elif len(Map)*len(Map[0]) > 5000*200:
+        print('Note: the map is large, calculation and plotting will be slow')
+    #==================================================================================
+    print('reading BPs ...')
+    n = 0
+    m = 0
+    for i in range(0, len(lines)-N_lines_left):
+        if (lines[i][0:3] == '!!B'):
+            if n<frameI:
+                n += 1
+                continue
+            if n==frameE:
+                break
+            if STEP>1:
+                if (n-frameI)%STEP:
+                    n += 1
+                    continue
+            if nBP[n]==0:
+                m += 1
+                n += 1
+                continue
+            #print(m,n)
+            nbpline = int((nBP[n]-1)/10)+1
+            bpline = ''
+            for j in range(0, nbpline):
+                bpline += lines[i+1+j]
+            #print(bpline)
+            bps = bpline.split()
+            bps5 = np.zeros(nBP[n], dtype='int32')
+            bps3 = np.zeros(nBP[n], dtype='int32')
+            for j in range(nBP[n]):
+                bps5[j], bps3[j] = map(int, bps[j].split('-'))
+            NextStem = 1
+            nStem = bps5[0] + bps3[0]
+            for j in range(nBP[n]-1):
+                bp5 = bps5[j]
+                bp3 = bps3[j]
+                #print(bp5,bp3)
+                Map[m][bp5] += nStem
+                Map[m][bp3] += nStem
+                if bps5[j+1]-bp5==1 and bp3-bps3[j+1]==1:
+                    NextStem = 0
+                else:
+                    NextStem = 1
+                if NextStem:
+                    nStem = bps5[j+1] + bps3[j+1]
+            #---------------
+            #print('----')
+            Map[m][bps5[-1]] += nStem
+            Map[m][bps3[-1]] += nStem
+            m += 1
+            n += 1
+    MapData = np.concatenate((MapData, Map))
+
+
+#===================================================================================================
+# exclude Triple-BP
+# Map[Map>2*nRes] = 0
+print('plotting ...')
+#------------
+MapData = MapData.T
+if needCeiling:
+    MapData[MapData==0] = nRes*2-1
+else:
+    MapData[MapData==0] += Map.max()+1
+#plt.title('{0:s}, {1} (STEP={2})'.format(RNA, TITLE, STEP), fontsize=15)
+#----------------------------------------------------------------------
+#plt.pcolor(MapData, cmap=plt.cm.gnuplot2, edgecolors='none')
+plt.pcolor(MapData, cmap=plt.cm.cubehelix, edgecolors='none')
+plt.xlabel("Frame", fontsize=20)
+plt.ylabel("Residue name", fontsize=20) #energy / kcal/mol #temperature / K
+plt.yticks(Mid, Yaxis, fontsize=12)
+if needCeiling:
+    plt.clim(3, nRes*2-1)
+plt.xticks(fontsize=15)
+cbar = plt.colorbar(shrink=0.8, aspect=30, pad=0.02)
+cbar.ax.tick_params(length=2, labelsize=12)
+plt.subplots_adjust(right=1.0, top=0.95, bottom=0.15)
+plt.show()

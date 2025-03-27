@@ -1,0 +1,130 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import os
+import sys
+import numpy as np
+import argparse
+
+#====== Main ====================================================================================================
+parser = argparse.ArgumentParser(description='='*80+"\n  *** calc_ddG_and_kinetics ***\n\n\tCalculate the free energy difference betweein two designated states\n\t and their exchange rate\n"+'='*80, formatter_class=argparse.RawTextHelpFormatter)
+
+parser.add_argument('-o', default='run.out', type=str, help='Energy output file; default = ''run.out''\n\n', metavar='')
+parser.add_argument('--seq', type=str, help='Sequence file, with the secondary structure of two conformers in dbn format\n\n', metavar='')
+parser.add_argument('--iMulti', default=0, type=int, help='Multiple energy files will be read, default=0 (single file)''\n\n', metavar='')
+parser.add_argument('--prefix', type=str, help='If iMulti=1, the energy filenames will be "prefixNNN.out"\n\n', metavar='')
+parser.add_argument('--files',type=str, help='An array of filename index. Indeces should be segmented with "," and no space, example: --files 1,2,4-7,9 ''\n\n', metavar='')
+parser.add_argument('--len', default=3, type=int, help='The lenght file index number, is default = 3, (example: prefix001.out)\n\n', metavar='')
+parser.add_argument('--temp', default=283, type=float, help='The simulation temperature (for free energy calculation), default=283(Kelvin)''\n\n', metavar='')
+#----------------------------------------------------------------------------------------------
+args = parser.parse_args()
+fnOut = args.o
+fnSeq = args.seq
+iMulti = args.iMulti
+prefix = args.prefix
+files = args.files
+LEN = args.len
+Temp = args.temp
+
+#----------------------------------------------------------------------------------------
+if iMulti == 1:
+    if prefix == None:
+        print("Error: if iMulti=1, the prefix must be specified")
+        sys.exit(1)
+    if files == None:
+        print("Error: if iMulti=1, the file indeces must be specified")
+        sys.exit(1)
+    if files == None:
+        print("Error: if iMulti=1, the file indeces must be specified")
+        sys.exit(1)
+if fnSeq == None:
+    print("Error: sequence file must be specified")
+    sys.exit(1)
+if Temp == None:
+    print("Error: temperature must be specified")
+    sys.exit(1)
+
+#----------------------------------------------------------------------------------------
+filenames = []
+if iMulti:
+    idxs = files.split(',')
+    for i in range(len(idxs)):
+        idx = idxs[i]
+        if len(idx.split('-')) == 2:
+            i0, i1 = idx.split('-')
+            i0, i1 = int(i0), int(i1)
+            for j in range(i0,i1+1):
+                filenames.append('{0}{1}.out'.format(prefix, str(j).zfill(LEN)))
+        else:
+            filenames.append('{0}{1}.out'.format(prefix, idx.zfill(LEN)))
+else:
+    nFile = 1
+    filenames.append(fnOut)
+nFile = len(filenames)
+print('nFile:', nFile)
+print('Files:', filenames)
+#----------------------------------------------------------------------------------------
+lines = open(fnSeq).readlines()
+SEQ  = lines[0].strip()
+DB_A = lines[1].strip()
+DB_B = lines[2].strip()
+N_lines_left = 20
+#--------------------------------------------------------------------
+nRes = len(SEQ)
+if len(SEQ) + len(DB_A) + len(DB_B) != nRes*3:
+    print('Unmatched sequecne and DB:\n', SEQ, '\n', DB_A, '\n', DB_B)
+    sys.exit(0)
+#--------------------------------------------------------------------
+nA = 0
+nB = 0
+k_forward = 0
+k_backward = 0
+state = [0, 0]
+n = 0
+for nn in range(nFile):
+    #===============================================================
+    print('Processing file ...', filenames[nn])
+    lines = open(filenames[nn]).readlines()
+    for i in range(len(lines) - N_lines_left):
+        if lines[i][:2] == '!!':
+            n += 1
+            state[0] = state[1]
+            db= ['.'] * nRes
+            nBP = int(lines[i].split(':')[1])
+            nline = int((nBP-1)/10) + 1
+            bpline = ''
+            if nBP:
+                for j in range(nline):
+                    bpline += lines[i+j+1]
+                bps = bpline.split()
+                for j in range(len(bps)):
+                    bi, bj = bps[j].split('-')
+                    bi, bj = int(bi), int(bj)
+                    db[bi] = '('
+                    db[bj] = ')'
+            #--- get the population -----------------
+            DB_i = ''.join(db)
+            if DB_i == DB_A:
+                state[1] = 0
+                nA += 1
+            elif DB_i == DB_B:
+                state[1] = 1
+                nB += 1
+            #--- get the kex ------------------------
+            if state[1]-state[0]==1:
+                k_forward += 1
+            elif state[1]-state[0]==-1:
+                k_backward += 1
+    #-----------------------------------------------
+    #print('nB=', nB)
+    #print('nA=', nA)
+
+print('\n\tState {0}  {1}   {2}'.format('  Secondary structure'.ljust(nRes, ' '), 'Population', 'Percent'))
+print('\t  A:   {0}  {1:8d}   {2:8.2f}%'.format(DB_A, nA, nA/(nA+nB)*100))
+print('\t  B:   {0}  {1:8d}   {2:8.2f}%'.format(DB_B, nB, nB/(nA+nB)*100))
+print('\tSEQ   ', SEQ)
+ddG = -8.3145 * Temp * np.log(nA/nB)/4184
+print('\n\tTemp= {0}K, \u0394\u0394G(B->A) = \u0394G(A)-\u0394G(B) = {1:.2f} kcal/mol'.format(Temp, ddG))
+
+print('\n\t(nB+nA)/nTotal = {0}/{1} = {2:.3f}%'.format(nB+nA, n,(nB+nA)/n*100))
+
+print('\n\tTransition times (A->B) =', k_forward)
+print('\tTransition times (B->A) =', k_backward, '\n')

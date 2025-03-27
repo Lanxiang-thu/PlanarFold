@@ -1,0 +1,320 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import os
+import sys
+import numpy as np
+import matplotlib.pyplot as plt
+import argparse
+
+#====== Main ==================================================================
+parser = argparse.ArgumentParser(description='='*80+"\n  *** read_PlanarFold_energy ***\n\n\tAnalyze the energy or other data recorded in energy output file\n"+'='*80, formatter_class=argparse.RawTextHelpFormatter)
+
+parser.add_argument('-o', default='run.out', type=str, help='Energy output file; default = ''run.out''\n\n', metavar='')
+parser.add_argument('--ref', type=str, help='Reference secondary structure file (.ct/.dbn/.dot format) \n\n', metavar='')
+parser.add_argument('--var', default=9, type=int, help='The variable index\n\t0:Temperature  1:Restraint\n\t2:Bond   3:Angle  4:Stacking\n\t5:Vdw    6:Eelc   7:BasePair\n\t8:Ektot  9:Eptot  10:Etot\nDefault=9(Eptot)''\n\n', metavar='')
+parser.add_argument('--step', default=1, type=int, help='The step gap to read the data, default=1''\n\n', metavar='')
+parser.add_argument('--needFrame', default=0, type=int, help='Only read desired frames, default=0 (read through all frames)''\n\n', metavar='')
+parser.add_argument('--frame0', default=-1, type=int, help='If needFrame=1, read frame from [frame0] to [frame1]''\n\n', metavar='')
+parser.add_argument('--frame1', default=-1, type=int, help='If needFrame=1, read frame from [frame0] to [frame1])''\n\n', metavar='')
+parser.add_argument('-s', default=5, type=int, help='Sphere size of scatter plot, default=5''\n\n', metavar='')
+# read the filenames
+args = parser.parse_args()
+if args.ref == None:
+    print('Error: ct file must be specified')
+    sys.exit(1)
+#----------------------------------------------------------------------------------------------
+fnOut = args.o
+fnBP = args.ref
+FLAG = args.var     # which variable to read (as Y-data)
+STEP = args.step
+needFrame = args.needFrame
+frameI = args.frame0
+frameE = args.frame1
+sphere_size = args.s
+#=================================================================================
+
+
+#===============================================================================
+iDATA = ['Temperature', 'E_restraint',
+         'Bond', 'Stem angle', 'Base-stacking',
+         'vdW', 'Electrostatics', 'Base-paring',
+         'Ektot', 'Eptot', 'Etot']
+UNIT = ['K', 'kcal/mol',
+        'kcal/mol', 'kcal/mol', 'kcal/mol',
+        'kcal/mol', 'kcal/mol', 'kcal/mol',
+        'kcal/mol', 'kcal/mol', 'kcal/mol']
+iLINE = [1, 1,
+         2, 2, 2,
+         3, 3, 3,
+         4, 4, 4]
+iSEG  = [3, 5,
+         1, 3, 5,
+         1, 3, 5,
+         1, 3, 5]
+#================================================================================
+N_lines_left = 20
+#================================================================================
+def CalculateF1(BPlist_NS, BPlist, nRes):
+    #print(nRes)
+    #--------------------------------------------
+    map_NS = np.zeros((nRes,nRes), dtype='int16')
+    map_pd = np.zeros((nRes,nRes), dtype='int16')
+    # construct the contact map
+    for i in range(nRes):
+        if BPlist_NS[i]:
+            map_NS[i, BPlist_NS[i]-1] = 1
+        if BPlist[i]:
+            map_pd[i, BPlist[i]-1] = 1
+    # compare
+    NS_paired = map_NS==1
+    NS_unpaired = map_NS==0
+    pd_paired = map_pd==1
+    pd_unpaired = map_pd==0
+    #-----------
+    nTP = np.sum(np.logical_and(NS_paired, pd_paired))
+    nTN = np.sum(np.logical_and(NS_unpaired, pd_unpaired))
+    nFP = np.sum(np.logical_and(NS_unpaired, pd_paired))
+    nFN = np.sum(np.logical_and(NS_paired, pd_unpaired))
+    
+    #------------------------------------
+    #print(nTP, nFP, nTN, nFN)
+    if nTP+nFN:
+        SN = nTP / (nTP+nFN)
+    else:
+        SN = 0
+    if nTP+nFP:
+        PR = nTP / (nTP+nFP)
+    else:
+        PR = 0
+    if PR+SN:
+        F1 = 2.0*PR*SN / (PR+SN)
+    else:
+        F1 = 0
+    #------------------------------------
+    return F1
+#===========================================================
+def DB_2_BPlist(dots):
+    state = []
+    bplist = np.zeros(nRes, dtype='int32')
+    for i in range(nRes):
+        if dots[i]=='(':
+            state.append(i)
+        elif dots[i]==')':
+            bplist[state[-1]] = i+1
+            bplist[i] = state[-1]+1
+            state.pop(-1)
+    return bplist
+#================================================================================
+#------- 1.Read the Native State 2D structure -----------------------------------
+print('Output:', fnOut)
+lines = open(fnBP).readlines()
+if fnBP.split('.')[1] == 'ct':
+    nRes = int(lines[0].split()[0])
+    BPlist_NS = np.zeros(nRes, dtype='int32')
+    for i in range(nRes):
+        j = int(lines[i+1].split()[4])
+        if j:#if j!=0, then it's paired
+            BPlist_NS[i] = j
+elif fnBP.split('.')[1] == 'dbn' or fnBP.split('.')[1] == 'dot':
+    nRes = len(lines[0]) - 1
+    DB_NS = lines[1]
+    BPlist_NS = DB_2_BPlist(DB_NS)
+else:
+    print('Error: unsupported secondary file format {0}\n Allowed formats are .ct and .dbn/.dot'.format(fnBP))
+    sys.exit(1)
+
+#------- 2.Read the desired info from the output file --------------
+line_shift = iLINE[FLAG]
+iseg = iSEG[FLAG]
+lines = open(fnOut).readlines()
+Ydata = []
+Frames = []
+
+line_len = len(lines)
+if needFrame:
+    n = 0
+    for i in range(line_len):
+        if lines[i][0:2] == '//':
+            if line_len - i-4 < N_lines_left:
+                break
+            if n<frameI:
+                continue
+            if n==frameE:
+                break
+            n += 1
+            #-------- only for 0K conformation --------------
+            if n%STEP == 0:
+                Frames.append(lines[i+1].split()[1])
+                Ydata.append(lines[i+line_shift].split()[iseg])
+else:
+    n = 0
+    for i in range(line_len):
+        if lines[i][0:2] == '//':
+            if line_len - i-4 < N_lines_left:
+                break
+            n += 1
+            #-------- only for 0K conformation --------------
+            if n%STEP == 0:
+                Frames.append(lines[i+1].split()[1])
+                Ydata.append(lines[i+line_shift].split()[iseg])
+            #Frames.append(lines[i+1].split()[1])
+            #Ydata.append(lines[i+line_shift].split()[iseg])
+#--------------------------------------------------------
+
+if len(Ydata) > 100000:
+    print('Note: the frame number{0} has exceeded 100000, the following calculation of F1-score will be slow'.format(len(Ydata) ))
+#------- 3.Read the Basepairing info and calculate the F1 score ----
+F1s = []
+#print('N_lines_left:', N_lines_left)
+#print('line_len:', line_len)
+print('nRes:', nRes)
+print('Calculating F1-score ...')
+if needFrame:
+    n = 0
+    for i in range(line_len):
+        if lines[i][0:3] == '!!B':
+            #print(i)
+            if line_len - i < N_lines_left:
+                #print(lines[i][:-1])
+                #print(line_len, i)
+                break
+            if n<frameI:
+                continue
+            if n==frameE:
+                break
+            n += 1
+            if n%STEP == 0:            
+                nBP = int(lines[i].split(':')[1])
+                nline = int((nBP-1)/10) + 1
+                bpline = ''
+                if nBP:
+                    for j in range(nline):
+                        bpline += lines[i+j+1]
+                    bps = bpline.split()
+                    Bplist = np.zeros(nRes, dtype='int32')
+                    for j in range(len(bps)):
+                        #print(bps[j])
+                        bi, bj = bps[j].split('-')
+                        bi, bj = int(bi), int(bj)
+                        Bplist[bi] = bj + 1
+                        Bplist[bj] = bi + 1
+                    f1_score = CalculateF1(BPlist_NS, Bplist, nRes)
+                    F1s.append(f1_score)
+                else:
+                    F1s.append(0.0)
+
+else:
+    n = 0
+    for i in range(line_len):
+        if lines[i][0:3] == '!!B':
+            #print(i)
+            if line_len - i < N_lines_left:
+                #print(lines[i][:-1])
+                #print(line_len, i)
+                break
+            n += 1
+            if n%STEP == 0:            
+                nBP = int(lines[i].split(':')[1])
+                nline = int((nBP-1)/10) + 1
+                bpline = ''
+                if nBP:
+                    for j in range(nline):
+                        bpline += lines[i+j+1]
+                    bps = bpline.split()
+                    Bplist = np.zeros(nRes, dtype='int32')
+                    for j in range(len(bps)):
+                        #print(bps[j])
+                        bi, bj = bps[j].split('-')
+                        bi, bj = int(bi), int(bj)
+                        Bplist[bi] = bj + 1
+                        Bplist[bj] = bi + 1
+                    f1_score = CalculateF1(BPlist_NS, Bplist, nRes)
+                    F1s.append(f1_score)
+                else:
+                    F1s.append(0.0)
+Frames = np.array(list(map(int,Frames)), dtype='int32')
+Ydata = np.array(list(map(float,Ydata)), dtype='float32')
+F1s = np.array(F1s)
+nData = len(F1s)
+Ydata = Ydata[0:nData]
+Frames = Frames[0:nData]
+print('nData =', nData)
+
+#------- 4.Plot ----------------------------------------------------
+lines = open(fnOut).readlines()
+for i in range(len(lines)):
+    data = lines[i].split()
+    for dat in data:
+        if dat.split('=')[0] == 'dt':
+            dt = float(dat.split('=')[1])
+            break
+#------------------------------------
+#---------------------------------------------------------------------------------------------
+#plt.scatter(Frames, Ydata, c=F1s, cmap=plt.cm.nipy_spectral_r, marker='o', alpha=1.0, s=10)
+plt.figure(figsize=(16,8))
+plt.scatter(np.arange(len(Ydata)), Ydata, c=F1s, cmap=plt.cm.nipy_spectral_r, marker='o', alpha=1.0, s=sphere_size)
+plt.clim(0.0, 1.0)
+#plt.colorbar(shrink=0.8, aspect=30, pad=0.02)
+cbar = plt.colorbar(shrink=0.8, aspect=30, pad=0.02)
+cbar.ax.tick_params(length=2, labelsize=15)
+
+#_--------------------------------------------------------------------------------------------------------------------
+idx = np.argmax(F1s)
+print('Highest F1-score at frame-{0}: F1={1:.2f}, Eng={2:.2f}'.format(idx, F1s[idx], Ydata[idx]))
+plt.scatter(idx, Ydata[idx], c='none', marker='o', s=150, edgecolors='gray', label='F1_max={0:.2f}, Eng={1:.2f}'.format(F1s[idx], Ydata[idx]))
+n = -1
+dots = ['.']*nRes
+for i in range(len(lines)):
+    if lines[i][0:3] == '!!B':
+        n += 1
+        if n == idx:
+            nBP = int(lines[i].split(':')[1])
+            nline = int((nBP-1)/10) + 1
+            bpline = ''
+            if nBP:
+                for j in range(nline):
+                    bpline += lines[i+j+1]
+                bps = bpline.split()
+                for j in range(len(bps)):
+                    bi, bj = bps[j].split('-')
+                    bi, bj = int(bi), int(bj)
+                    dots[bi] = '('
+                    dots[bj] = ')'
+                break
+print('dbn:', ''.join(dots))
+idx = np.argmin(Ydata)
+print('Lowest Energy at frame-{0}: F1={1:.2f}, Eng={2:.2f}'.format(idx, F1s[idx], Ydata[idx]))
+plt.scatter(idx, Ydata[idx], c='none', marker='o', s=150, edgecolors='red', label='F1_Emin={0:.2f}, Eng={1:.2f}'.format(F1s[idx], Ydata[idx]))
+n = -1
+dots = ['.']*nRes
+for i in range(len(lines)):
+    if lines[i][0:3] == '!!B':
+        n += 1
+        if n == idx:
+            nBP = int(lines[i].split(':')[1])
+            nline = int((nBP-1)/10) + 1
+            bpline = ''
+            if nBP:
+                for j in range(nline):
+                    bpline += lines[i+j+1]
+                bps = bpline.split()
+                for j in range(len(bps)):
+                    bi, bj = bps[j].split('-')
+                    bi, bj = int(bi), int(bj)
+                    dots[bi] = '('
+                    dots[bj] = ')'
+                break
+print('dbn:', ''.join(dots))
+
+#---------------------------------------------------------------------------------------------------------------------
+#plt.scatter()
+plt.title('{0} ({1} nt)'.format(fnBP, nRes), fontsize=20)
+plt.ylabel('{0} ({1})'.format(iDATA[FLAG], UNIT[FLAG]), fontsize=20)
+plt.xlabel('Frame', fontsize=20)
+plt.xticks(fontsize=15)
+plt.yticks(fontsize=15)
+#plt.colorbar()
+#plt.ylim(-500, 300)
+plt.legend(fontsize=12)
+plt.subplots_adjust(right=1.0)
+plt.show()
+

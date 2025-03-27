@@ -1,0 +1,525 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import os
+import sys
+import time
+from math import *
+import random
+import numpy as np
+import argparse
+
+#====== Main ==================================================================
+#parser = argparse.ArgumentParser(description="PlanarFold.v1 2025")
+parser = argparse.ArgumentParser(description='='*60+"\n  *** generate_PlanarFold_Inputs ***\n\n\tGenerate input files required for PlanarFold\n\t  [ssRNA.prmtop], [ssRNA.inpcrd]\n\t  [restraint_ntr.in], [restraint_dpr.in]\n"+'='*60, formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument('-s', '--seq', default='ssRNA.seq', type=str, help='RNA sequence file; default = ''ssRNA.seq''\n\n', metavar='')
+parser.add_argument('-p', type=str, help='Topology file; e.g. ssRNA.prmtop\n\n', metavar='')
+parser.add_argument('-c', type=str, help='Coordinate file; e.g. ssRNA.inpcrd\n\n', metavar='')
+parser.add_argument('-ntr', type=str, help='Restraint file; e.g. restraint_ntr.in\n\n', metavar='')
+parser.add_argument('-dpr',  type=str, help='Confinement file; e.g. restraint_dpr.in\n\n', metavar='')
+parser.add_argument('--iCirc', default=1, type=int, help='Generate circular(1, default) or linear(0) conformation''\n\n', metavar='')
+parser.add_argument('--InitV', default=0, type=int, help='Set initial velocities(1), or not(0, default)''\n\n', metavar='')
+parser.add_argument('--vscale', default=0.1, type=float, help='If initializing velocities, uniformly distributed numbers\n\tfrom -1.0 to 1.0 are chosen, with a scaling factor of vscale''\n\n', metavar='')
+
+
+# read the filenames
+args = parser.parse_args()
+#----------------------------------------------------------------------------------------------
+fnseq = args.seq              # The sequence file
+IsCircular = args.iCirc     # Generate circular(1) or linear(0) strand in ssRNA.inpcrd
+InitVel = args.InitV        # Initialize the velocities(1) or not(0)
+VEL_scale = args.vscale     # the scaling factor for randomized velocities
+fntop = args.p
+fncrd = args.c
+fnntr = args.ntr
+fndpr = args.dpr
+#----------------------------------------------------------------------------------------------
+fnPrmtop =fntop
+fnInpcrd = fncrd
+fnRestraint = fnntr
+fnRestraint2 = fndpr
+#----------------------------------------------------------------------------------------------
+if IsCircular==0 and InitVel==0:
+    print("Warining: if linear initial conformation is generated without any intial velocity, the RNA cannot fold!!")
+    print("If user must generate a linear initial conformation without any speed, set InitVel=1 and vscale=0.0 instead")
+    sys.exit(1)
+#===========================================================================================================
+RES = ['A', 'U', 'G', 'C']
+MASS = [321.45, 321.45, 321.45, 321.45]
+DIMER = ['AA', 'AU', 'AG', 'AC',
+        'UA', 'UU', 'UG', 'UC',
+        'GA', 'GU', 'GG', 'GC',
+        'CA', 'CU', 'CG', 'CC']
+BOND_LEN = 5.5
+BOND_EQ = [BOND_LEN] * 16
+BOND_FRC = [20.0]*16
+ANGLE_EQ = [1.57079633]*36 # Pi//2
+ANGLE_FRC = [0.9,  1.1,  2.1,  2.2,  0.6,  1.4,
+             1.3,  0.9,  2.1,  2.4,  1.0,  1.3,
+             2.4,  2.2,  3.3,  3.4,  1.5,  2.5,
+             2.1,  2.1,  2.4,  3.3,  1.4,  2.1,
+             1.3,  1.4,  2.1,  2.5,  0.5, -1.3,
+             1.0,  0.6,  1.4,  1.5, -0.3,  0.5]
+INPCRD_HEADER = 'default_name' + ' '*(80-12) + '\n'
+#-----------------------------------------------------------------
+# writeSect(): organize the section according to designated format
+#
+# Arguments:
+#   format:   '5-E-16', '20-A-4', '10-I-8'. ('1-a-80' or '1-I-8')
+#   data:     the data to be written into this section
+#----------------------------------------------------------------
+def writeSect(format, data):
+    ndt, fmt, lgh = format.split('-')
+    ndt = int(ndt)  # n data in a single line
+    fmt = str(fmt).upper()  # FORTRAN format
+    lgh = int(lgh)  # length of each data
+    lines = ''
+    #--------- format conversion -------
+    if fmt=='A':
+        for i in range(len(data)):
+            lines += data[i].ljust(lgh)
+            if (i+1)%ndt==0:
+                lines += '\n'
+    elif fmt=='I':    # int
+        for i in range(len(data)):
+            lines += str(data[i]).rjust(lgh)
+            if (i+1)%ndt==0:
+                lines += '\n'
+    elif fmt=='E':    # float:5E16.8
+        if lgh==16:
+            for i in range(len(data)):
+                lines += '%16.8E'%data[i]
+                if (i+1)%ndt==0:
+                    lines += '\n'
+        elif lgh==12:
+            for i in range(len(data)):
+                lines += '%12.7f'%data[i]
+                if (i+1)%ndt==0:
+                    lines += '\n'
+    else:
+        print("Generation failure: format type '{0:s}' not support!!".format(f))
+        sys.exit(0)
+    #-----------------------------------------
+    if (len(data) % ndt) != 0:
+        lines += '\n'
+    # ------------------------------------
+    return lines
+
+#--------------------------------------------------------------
+#--------------------------------------------------------------
+def packing(n, nBond):
+    natom = n       # 1.Number of atoms
+    ntypes = 4      # 2.Number of distinct Lennard-Jones atom types
+    nbonh = 0       # 3.Number of bonds containing Hydrogen
+    mbona = nBond       # 4.Number of bonds not containing Hydrogen
+    ntheth = 0      # 5.Number of angles containing Hydrogen
+    mtheta = 0      # 6.Number of angles not containing Hydrogen
+    nphih = 0       # 7.Number of torsions containing Hydrogen
+    mphia = 0       # 8.Number of torsions not containing Hydrogen
+    nhparm = 0      # 9.Not currently used for anything
+    nparm = 0       # 10.Used to determine if this is a LES-compatible prmtop
+    nnb = 0         # 11.Number of excluded atoms (length of total exclusion list)
+    nres = n        # 12.Number of residues
+    nbona = nBond       # 13.MBONA + number of constraint bonds
+    ntheta = 0      # 14.MTHETA + number of constraint angles
+    nphia = 0       # 15.MPHIA + number of constraint torsions
+    numbnd = len(BOND_FRC)      # 16.Number of unique bond types
+    numang = len(ANGLE_FRC)      # 17.Number of unique angle types
+    nptra = 0       # 18.Number of unique torsion types
+    natyp = 0       # 19.Number of SOLTY terms. Currently unused.
+    nphb = 0        # 20.Number of distinct 10-12 hydrogen bond pair types
+    ifpert = 0      # 21.Set to 1 if topology contains residue perturbation information
+    nbper = 0       # 22.Number of perturbed bonds
+    ngper = 0       # 23.Number of perturbed angles
+    ndper = 0       # 24.Number of perturbed torsions
+    mbper = 0       # 25.Number of bonds in which both atoms are being perturbed
+    mgper = 0       # 26.Number of angles in which all 3 atoms are being perturbed
+    mdper = 0       # 27.Number of torsions in which all 4 atoms are being perturbed
+    ifbox = 0       # 28.Flag indicating whether a periodic box is present.
+    #                #    Values can be 0 (no box),(orthorhombic box) or 2 (truncated octahedron)
+    nmxrs = 1       # 29.Number of atoms in the largest residue
+    ifcap = 0       # 30.Set to 1 if a solvent CAP is being used
+    numextra = 0    # 31.Number of extra points in the topology file
+    return list([ natom, ntypes, nbonh,  mbona, ntheth, mtheta,  nphih, mphia, nhparm, nparm,
+                  nnb,   nres, nbona, ntheta,  nphia, numbnd, numang, nptra,  natyp,  nphb,
+               ifpert,  nbper, ngper,  ndper,  mbper,  mgper,  mdper, ifbox,  nmxrs, ifcap,
+               numextra])
+#===============================================================================================================
+#-------- 1.Read the RNA sequences and 2D structure ------------------------
+lines = open(fnseq).readlines()
+if lines[0][0] == '>':
+    pdbid = lines[0].split()[0][1:]
+    seq = lines[1].strip()
+    nRes = len(seq)
+    print('nRes:', nRes)
+    print('seq:', seq)
+    if len(lines)>2:
+        if len(lines[2]) > 2:
+            print('Reading secondary structure ...')
+            dbn = lines[2].strip()
+            if len(dbn) != nRes:
+                print('Error: the D&B format is in different length with RNA sequence !')
+                sys.exit(1)
+        else:
+            print('Note: no secondary structure is assumed')
+            dbn = '.'*nRes
+    else:
+        print('Note: no secondary structure is assumed')
+        dbn = '.'*nRes
+print('dbn:', dbn)
+
+#===============================================================================================================
+'''
+fnPrmtop = 'ssRNA.prmtop'
+fnInpcrd = 'ssRNA.inpcrd'
+fnRestraint = 'restraint_ntr.in'
+fnRestraint2 = 'restraint_dpr.in'
+'''
+#======== 2.Generate "ssRNA.prmtop" file ================================================
+nBond = nRes - 1
+nAngle = 0
+#------------------------------------------------------------------------------
+lines1 = []
+# write the header: the time log
+t = time.localtime()
+ln = '%VERSION  VERSION_STAMP = V0001.000  DATE = Month/Day/Year  Hour:Minute:Second'
+ln = ln.replace('Month', str(t.tm_mon).zfill(2))
+ln = ln.replace('Day', str(t.tm_mday).zfill(2))
+ln = ln.replace('Year', str(t.tm_year).zfill(2))
+ln = ln.replace('Hour', str(t.tm_hour).zfill(2))
+ln = ln.replace('Minute', str(t.tm_min).zfill(2))
+ln = ln.replace('Second', str(t.tm_sec).zfill(2))
+ln.ljust(80, ' ')
+lines1.append(ln+'\n')
+#------------------------------------------------------------------------------
+#--------------------------------------------------------------
+lines1.append('%FLAG TITLE'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(20a4)'.ljust(80, ' ')+'\n')
+data = ['default_name']
+lines1.append(writeSect('20-A-4', data))
+#--------------------------------------------------------------
+lines1.append('%FLAG POINTERS'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(10I8)'.ljust(80, ' ')+'\n')
+pointers = packing(nRes, nBond)
+data = pointers
+lines1.append(writeSect('10-I-8', data))
+#--------------------------------------------------------------
+lines1.append('%FLAG ATOM_NAME'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(20a4)'.ljust(80, ' ')+'\n')
+data = []
+for j in range(nRes):
+    data.append(seq[j])
+lines1.append(writeSect('20-a-4', data))
+#--------------------------------------------------------------
+lines1.append('%FLAG CHARGE'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+data = []
+for j in range(nRes):
+    data.append(0.0)    # no charge at all
+lines1.append(writeSect('5-E-16', data))
+#--------------------------------------------------------------
+lines1.append('%FLAG ATOMIC_NUMBER'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(10I8)'.ljust(80, ' ')+'\n')
+data = []
+for j in range(nRes):
+    ifind = 0
+    for k in range(len(RES)):   # A or U or C or G
+        if seq[j] == RES[k]:
+            ifind = 1
+            data.append(k+1)
+            break
+    if ifind==0:
+        print("Generation failure: residue type '{0:s}' not support!!".format(seq[j]))
+        sys.exit(0)
+lines1.append(writeSect('10-I-8', data))
+#--------------------------------------------------------------
+lines1.append('%FLAG MASS'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+data = []
+for j in range(nRes):
+    ifind = 0
+    for k in range(len(RES)):   # A or U or C or G
+        if seq[j] == RES[k]:
+            ifind = 1
+            data.append(MASS[k])
+            break
+    if ifind==0:
+        print("Generation failure: residue type '{0:s}' not support!!".format(seq[j]))
+        sys.exit(0)
+lines1.append(writeSect('5-E-16', data))
+#--------------------------------------------------------------
+lines1.append('%FLAG ATOM_TYPE_INDEX'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(10I8)'.ljust(80, ' ')+'\n')
+data = []
+for j in range(nRes):
+    ifind = 0
+    for k in range(len(RES)):   # A or U or C or G
+        if seq[j] == RES[k]:
+            ifind = 1
+            data.append(k+1)
+            break
+    if ifind==0:
+        print("Generation failure: residue type '{0:s}' not support!!".format(seq[j]))
+        sys.exit(0)
+lines1.append(writeSect('10-I-8', data))
+#--------------------------------------------------------------
+lines1.append('%FLAG NUMBER_EXCLUDED_ATOMS'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(10I8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG NONBONDED_PARM_INDEX'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(10I8)'.ljust(80, ' ')+'\n')
+data = [1,2,4,7,2,3,5,8,4,5,6,9,7,8,9,10]
+lines1.append(writeSect('10-I-8', data))
+#--------------------------------------------------------------
+lines1.append('%FLAG RESIDUE_LABEL'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(20a4)'.ljust(80, ' ')+'\n')
+data = []
+for j in range(nRes):
+    data.append(seq[j])
+lines1.append(writeSect('20-a-4', data))
+#--------------------------------------------------------------
+lines1.append('%FLAG RESIDUE_POINTER'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(10I8)'.ljust(80, ' ')+'\n')
+data = list(range(nRes))
+lines1.append(writeSect('10-I-8', data))
+#--------------------------------------------------------------
+lines1.append('%FLAG BOND_FORCE_CONSTANT'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+data = BOND_FRC
+lines1.append(writeSect('5-E-16', data))
+#--------------------------------------------------------------
+lines1.append('%FLAG BOND_EQUIL_VALUE'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+data = BOND_EQ
+lines1.append(writeSect('5-E-16', data))
+#--------------------------------------------------------------
+lines1.append('%FLAG ANGLE_FORCE_CONSTANT'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+data = ANGLE_FRC
+lines1.append(writeSect('5-E-16', data))
+#--------------------------------------------------------------
+lines1.append('%FLAG ANGLE_EQUIL_VALUE'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+data = ANGLE_EQ
+lines1.append(writeSect('5-E-16', data))
+#--------------------------------------------------------------
+lines1.append('%FLAG DIHEDRAL_FORCE_CONSTANT'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG DIHEDRAL_PERIODICITY'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG DIHEDRAL_PHASE'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG SCEE_SCALE_FACTOR'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG SCNB_SCALE_FACTOR'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG SOLTY'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG LENNARD_JONES_ACOEF'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG LENNARD_JONES_BCOEF'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG BONDS_INC_HYDROGEN'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(10I8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG BONDS_WITHOUT_HYDROGEN'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(10I8)'.ljust(80, ' ')+'\n')
+data = []
+for j in range(nBond):
+    data.append(j*3)
+    data.append(j*3 + 3)
+    data.append(1)  # needless to distinguish bonds
+lines1.append(writeSect('10-I-8', data))
+#--------------------------------------------------------------
+lines1.append('%FLAG ANGLES_INC_HYDROGEN'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(10I8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG ANGLES_WITHOUT_HYDROGEN'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(10I8)'.ljust(80, ' ')+'\n')
+#data = []
+#for j in range(nAngle):
+#    data.append(j*3)
+#    data.append(j*3 + 3)
+#    data.append(j*3 + 6)
+#    data.append(1)  # needless to distinguish bonds
+#lines1.append(writeSect('10-I-8', data))
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG DIHEDRALS_INC_HYDROGEN'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(10I8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG DIHEDRALS_INC_HYDROGEN'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(10I8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG EXCLUDED_ATOMS_LIST'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(10I8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG HBOND_ACOEF'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG HBOND_BCOEF'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG HBCUT'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG AMBER_ATOM_TYPE'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(20a4)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG TREE_CHAIN_CLASSIFICATION'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(20a4)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG JOIN_ARRAY'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(10I8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG IROTAT'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(10I8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG SOLVENT_POINTERS'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(3I8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG ATOMS_PER_MOLECULE'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(10I8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG BOX_DIMENSIONS'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG RADIUS_SET'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(1a80)'.ljust(80, ' ')+'\n')
+lines1.append('modified Bondi radii (mbondi)\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG RADII'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG SCREEN'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(5E16.8)'.ljust(80, ' ')+'\n')
+lines1.append('\n')
+#--------------------------------------------------------------
+lines1.append('%FLAG IPOL'.ljust(80, ' ')+'\n')
+lines1.append('%FORMAT(1I8)'.ljust(80, ' ')+'\n')
+lines1.append('       0\n')
+#--------------------------------------------------------------
+# write "ssRNA.prmtop" file
+if fnPrmtop == None:
+    print('\tSkipping topology file!')
+else:
+    print('\tGenerating topology file:', fnPrmtop)
+    fo = open(fnPrmtop, "w")
+    for ln in lines1:
+        fo.write(ln)
+    fo.close()
+
+#======== 3.Generate "ssRNA.inpcrd" file ================================
+lines2 = []
+lines2.append(INPCRD_HEADER)
+lines2.append('%6d'%nRes)
+lines2.append('\n')
+#----------------------------------------------------------------
+#-----------------  Circular Fashion  ---------------------------
+#----------------------------------------------------------------
+if IsCircular:
+    PI = 3.1415926535898
+    theta = 2*PI/(nRes+1)   #'+2' stands for a gap between the termini
+    radius = BOND_LEN/2 /sin(theta/2)   # the radius of the RNA chain circle
+    th0 = 0.0
+    for i in range(nRes):
+        ln = '{0:12f}{1:12f}{2:12f}'.format(radius * cos(th0), radius * sin(th0), 0.0)
+        th0 += theta
+        if (i+1)%2==0:
+            ln += '\n'
+        lines2.append(ln)
+    if (nRes+1)%2==0:
+        lines2.append('\n')
+#--------------------------------------------------------------
+#-----------------  Linear Fashion  ---------------------------
+#--------------------------------------------------------------
+else:
+    for i in range(nRes):
+        ln = '{0:12f}{1:12f}{2:12f}'.format(BOND_LEN*i, 0.0, 0.0)
+        if (i+1)%2==0:
+            ln += '\n'
+        lines2.append(ln)
+    if (nRes+1)%2==0:
+        lines2.append('\n')
+#--------------------------------------------------------------
+#-----------------  V e l o s i t y  --------------------------
+#--------------------------------------------------------------
+#np.random.seed(RANDOM_SEED)
+# set randomized initial velocities
+if InitVel:
+    for i in range(nRes):
+        # [-1.0, 1.0] * VEL_scale
+        vels = (np.random.rand(2)*2 - 1.0) * VEL_scale
+        ln = '{0:12.7f}{1:12.7f}{2:12.7f}'.format(vels[0], vels[1], 0.0)
+        if (i+1)%2==0:
+            ln += '\n'
+        lines2.append(ln)
+    if (nRes+1)%2==0:
+        lines2.append('\n')
+# Not initialize velocities
+else:
+    vel = []
+    for i in range(nRes*3):
+        vel.append(0.0)
+    lines2.append(writeSect('6-E-12', vel))
+# write "ssRNA.inpcrd" file
+if fnInpcrd == None:
+    print('\tSkipping coordinate file!')
+else:
+    print('\tGenerating coordinate file:', fnInpcrd)
+    fo = open(fnInpcrd, "w")
+    for ln in lines2:
+        fo.write(ln)
+    fo.close()
+#-------- 4.Generate "restraint_ntr.in" file -----------------------------------
+if fnRestraint == None:
+    print('\tSkipping restraint file!')
+else:
+    print('\tGenerating restraint file:', fnRestraint)
+    fo = open(fnRestraint, "w")
+    fo.write('>{0}\n'.format(pdbid))
+    fo.write('{0}\n'.format(seq))
+    fo.write('{0}\n'.format(dbn))
+    fo.close()
+#-------- 5.Generate "restraint_dpr.in" file -----------------------------------
+if fnRestraint2 == None:
+    print('\tSkipping confinement file!')
+else:
+    print('\tGenerating confinement file:', fnRestraint2)
+    fo = open(fnRestraint2, "w")
+    fo.write('>{0}\n'.format(pdbid))
+    fo.write('{0}\n'.format(seq))
+    fo.write('{0}\n'.format(dbn))
+    fo.close()
+

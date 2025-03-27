@@ -1,0 +1,148 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import os
+import sys
+from math import *
+import numpy as np
+import netCDF4 as nc
+import argparse
+parser = argparse.ArgumentParser(description='='*60+"\n  elongate_Transcript \n\t Elongate the trancript by 1-nt \n"+'='*60, formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument('-c', type=str, help='Coordinate file of elongated transcript (by 1-nt)\n\n', metavar='')
+parser.add_argument('-x', type=str, help='Trajectory file; e.g. run.nc\n\n', metavar='')
+parser.add_argument('-r', type=str, help='Restart file; e.g. run.rst\n\n', metavar='')
+parser.add_argument('--iFrame', default=-1, type=int, help='If trajectory file is used, extract the frame[iFrame] from; default=-1(last frame)\n\n', metavar='')
+
+# read the filenames ----------------------------
+args = parser.parse_args()
+fncrd = args.c
+fntrj = args.x
+fnrst = args.r
+iframe = args.iFrame
+#=====================================================================
+if fntrj == None:
+    iRst = 1
+    fnRst = fnrst
+    print('\tNote: extract coordinates form restart file')
+if fnrst == None:
+    iRst = 0
+    fnRst = fntrj
+    print('\tNote: extract coordinates form trajectory file')
+if fnrst == None and fntrj == None:
+    print('\tError: at least restart or trajectory file should be specified')
+    sys.exit(1)
+if fnrst != None and fntrj != None:
+    print('\tError: either restart or trajectory file should be specified')
+    sys.exit(1)
+#==============================================================================
+fnInpNew = fncrd
+#===============================================================================
+def CheckCollide(crds, crdC):
+    # the minimal distance between the nascent residue and transcribed ones
+    dist_min = 5.5 * 2 * 0.70
+    dist_min *= dist_min
+    # check any collisoon with nascent residue (except with the lase one)
+    iClose = 0
+    for i in range(len(crds)-1):
+        if np.sum(np.square(crdC-crds[i][0:2])) < dist_min:
+            iClose = 1
+            break
+    # any collision within dist_min is not allowed
+    if iClose:
+        return 0
+    else:
+        return 1
+
+#---------------------------------------------------------
+def Extend(crdA, crdB, crds):
+    notPos = 1
+    dist = np.sqrt(np.sum(np.square(crdA-crdB)))
+    # 2. calculate theta_A
+    theta_A = np.arccos((crdA[0]-crdB[0])/dist)
+    if (crdA[1]-crdB[1]) > 0:
+        theta_Ap = theta_A
+    else:
+        theta_Ap = 2*np.pi - theta_A
+    # 3. initliaze the position of C (at the extensive line with res[-1] and res[-2])
+    theta_B = theta_Ap + np.pi
+    crdC = crdB[0:2] + np.array([5.5*np.cos(theta_B), 5.5*np.sin(theta_B)])
+    notCollide = CheckCollide(crds, crdC)
+    if notCollide:
+        notPos = 0
+        print('\tNote: extend at 180 degree (best position)')
+        return(crdC)
+    # 4. rotate C (every 10 degree)
+    theta_Bp = theta_B
+    # counter-clockwise: 90 degree
+    for i in range(9):
+        theta_Bp += 10/180 * np.pi
+        crdC = crdB[0:2] + np.array([5.5*np.cos(theta_Bp), 5.5*np.sin(theta_Bp)])
+        notCollide = CheckCollide(crds, crdC)
+        if notCollide:
+            print('\tNote: extend at {0} degree'.format(180-i*10))
+            notPos = 0
+            return(crdC)
+    # clockwise: 90 degree
+    theta_Bp = theta_B
+    for i in range(9):
+        theta_Bp -= 10/180 * np.pi
+        crdC = crdB[0:2] + np.array([5.5*np.cos(theta_Bp), 5.5*np.sin(theta_Bp)])
+        notCollide = CheckCollide(crds, crdC)
+        if notCollide:
+            print('\tNote: extend at {0} degree'.format(180-i*10))
+            notPos = 0
+            return(crdC)
+    if notPos:
+        print('\tExtension Failure !!')
+        print('\t\t there is not good spot to place the nascent residue at this conformation')
+        print('\t\t please try another frame for extension')
+        sys.exit(1)
+
+
+#=====================================================================
+
+# use netCDF4 to read nc files
+print('\tReading:', fnRst)
+traj = nc.Dataset(fnRst)  # get the coordinate and velocity array
+#print('\ttraj', traj)
+#-------------------------------------------------------------------
+if iRst:
+    crds = np.array(traj.variables['coordinates'][:,:])
+    nRes = len(crds) + 1
+    vels = np.array(traj.variables['velocities'][:,:])
+    #print('vels:', vels)
+    # the vel of the nascent residue is set zero
+    vels = np.concatenate((vels, np.zeros((1,3))))
+else:
+    crds = np.array(traj.variables['coordinates'][iframe][:][:,:])
+    # add one more nascent residue
+    nRes = len(crds) + 1
+    # no velocities are recorded in trajectory file, asign zero vel
+    vels = np.zeros((nRes,3))
+#print('crds:', crds)
+print('\tnRes=', nRes-1)
+#-------------------------------------------------------------------
+fo = open(fnInpNew, "w")
+fo.write('defaulte_name\n')
+fo.write('{0:6d}\n'.format(nRes))
+#----------- coordinates --------------------------------------------------------
+for i in range(nRes):
+    if i == nRes-1:
+        # extend the new-born residue along the 3' terminal two residues.
+        crd_nascent = Extend(crds[-2], crds[-1], crds[:])
+        #xN = 2*crds[-1][0] - crds[-2][0]
+        #yN = 2*crds[-1][1] - crds[-2][1]
+        fo.write('{0:12.7f}{1:12.7f}{2:12.7f}'.format(crd_nascent[0], crd_nascent[1], 0.0))
+    else:
+        fo.write('{0:12.7f}{1:12.7f}{2:12.7f}'.format(crds[i][0], crds[i][1], 0.0))
+    if i%2==1:
+        fo.write('\n')
+if nRes%2==1:
+    fo.write('\n')
+#----------- velocities ---------------------------------------------------------
+for i in range(nRes):
+    fo.write('{0:12.7f}{1:12.7f}{2:12.7f}'.format(vels[i][0], vels[i][1], 0.0))
+    if i%2==1:
+        fo.write('\n')
+if nRes%2==1:
+    fo.write('\n')
+fo.close()
+print('\tWritten:', fnInpNew, '\n')

@@ -1,0 +1,123 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import sys
+import numpy as np
+from math import *
+import netCDF4 as nc
+import matplotlib.pyplot as plt
+import argparse
+#====== Main ====================================================================================================
+parser = argparse.ArgumentParser(description='='*60+"\n  *** draw_Contact_map ***\n\n\t Draw the contact map of a designated frame\n"+'='*60, formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument('-p', default='ssRNA.prmtop', type=str, help='Topology file; default = ''ssRNA.prmtop''\n\n', metavar='')
+parser.add_argument('-x', default='run.nc', type=str, help='Trajectory file; default = ''run.nc\n\n', metavar='')
+parser.add_argument('--frame', type=int, help='The index of desired frame''\n\n', metavar='')
+parser.add_argument('--minLoop', default=4, type=float, help='The minimal apical, default=4 (tetraloop)''\n\n', metavar='')
+parser.add_argument('--bcut', default=14.0, type=float, help='The cutoff for contact map, default=14.0''\n\n', metavar='')
+args = parser.parse_args()
+#-----------------------------------------------------------------------------------------------------------------
+fntop = args.p
+fncrd = args.x
+frame = args.frame
+minLoop = args.minLoop
+bcut = args.bcut
+printCmap = 0
+#-----------------------------------------------------------------------------------------------------------------
+if frame == None:
+    print("Error: the frame must be specified! '--frame'")
+    sys.exit(1)
+#import seaborn as sns
+#------------------------------------------------------------------------
+#       A   U   G   C
+#   A   0   2   0   0
+#   U   2   0   2   0
+#   G   0   2   0   3
+#   C   0   0   3   0
+#------------------------------------------------------------------------
+RES = ['A', 'U', 'G', 'C']
+BPtable = [1, 4, 2, 1,
+           4, 1, 4, 1,
+           2, 4, 1, 6,
+           1, 1, 6, 1]
+def getRes(res):
+    for i in range(4):
+        if res==RES[i]:
+            return i
+#=========================================================================================
+print('fntop:', fntop)
+print('fncrd:', fncrd)
+traj = nc.Dataset(fncrd).variables['coordinates']   # get the coordinates array
+nframe = len(traj)
+nRes = len(traj[0][:])
+print('nframe=', nframe, 'nRes=', nRes, 'frame=', frame)
+crd = traj[frame][:]
+#---------------------------------------------------------------
+seq_line = ''
+lines = open(fntop).readlines()
+#print(lines)
+for i in range(len(lines)):
+    if lines[i][0:15] == '%FLAG ATOM_NAME':
+        for j in range(i+2, len(lines)):
+            if lines[j][0:1] == '%':
+                break
+            else:
+                seq_line += lines[j]
+        break
+seq = seq_line.split()
+print('seq:\n', seq)
+
+#---------------------------------------------------------------
+bcut2 = bcut * bcut
+Map = 0.0 * np.ones((nRes, nRes))
+for i in range(nRes-minLoop+1):
+    for j in range(i+minLoop+1, nRes):
+        dist = np.sum(np.square(crd[i]-crd[j]))
+        res5 = getRes(seq[i])
+        res3 = getRes(seq[j])
+        dimer = res5 * 4 + res3
+        #--- the half all filled triangle -------
+        Map[j][i] = BPtable[dimer]/dist
+        #---- the other close-contacted triangle------
+        if dist > bcut2:
+            continue
+        else:
+            #Map[i][j] = 1.0/dist
+            #Map[j][i] = Map[i][j]
+            if BPtable[dimer]:
+                Map[i][j] = BPtable[dimer]/dist
+                #Map[j][i] = BPtable[dimer]/dist
+                #Map[i][j] = 1.0/dist
+                #Map[j][i] = Map[i][j]
+            else:
+                Map[i][j] = 1.0/dist
+                Map[j][i] = 1.0/dist
+
+
+if printCmap:
+    print('Map:')
+    for i in range(nRes):
+        for j in range(i,nRes):
+            if Map[i][j]:
+                print('Map[{0}][{1}]={2:.4f} '.format(i,j,Map[i][j]), end='')
+        print()
+#---------------------------------------------------------------
+Mid = []
+Yaxis = []
+iGap = (int( (int(nRes/10)-5) /10) + 1)*10
+for i in range(9, nRes, iGap):
+    Yaxis.append(seq[i]+str(i+1))
+    Mid.append(i+0.5)
+
+#---------------------------------------------------------------
+plt.pcolor(Map, cmap=plt.cm.bone_r, edgecolors='none', label = Map)
+plt.title('Contact map of {0:s}({1:d}nt) at frame:{2}'.format('RNA', nRes, frame), fontsize=15)
+plt.plot([0,nRes], [0,nRes], color='black', lw=0.5)
+cbar = plt.colorbar(shrink=0.8, aspect=30, pad=0.02)
+cbar.ax.tick_params(length=2, labelsize=12)
+plt.yticks(Mid, Yaxis, size=12)
+plt.xticks(Mid, Yaxis, size=12, rotation=45)
+plt.tick_params(pad=0.0)
+ax = plt.gca()
+#ax.xaxis.set_ticks_position('top')
+ax.invert_yaxis()
+plt.subplots_adjust(top=0.9, bottom=0.12)
+#plt.axis('equal')
+plt.show()

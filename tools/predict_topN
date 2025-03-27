@@ -1,0 +1,66 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import os
+import sys
+import numpy as np
+import matplotlib.pyplot as plt
+import argparse
+#====== Main ====================================================================================================
+parser = argparse.ArgumentParser(description='='*85+"\n  *** predict_topN ***\n\n\tPredict the top-N conformers\n\n\tNote: different secondary structures are represented by the conformers of\n\t\tcorresponding secodnary structure with the lowest potential energy\t\n"+'='*85, formatter_class=argparse.RawTextHelpFormatter)
+
+parser.add_argument('--rerank', default='run_Ranked.dots', type=str, help='DBN file reranked by potential energy; default = ''run_Ranked.dots''\n\n', metavar='')
+parser.add_argument('--topN', default=1, type=int, help='Calculate the top-N conformers; default=1''\n\n', metavar='')
+args = parser.parse_args()
+#-----------------------------------------------------------------------------------------------------------------
+fnRerank = args.rerank
+topN = args.topN
+#========================================================================
+lines = open(fnRerank).readlines()
+seq = lines[0].split()[0]
+nRes = len(seq)
+print('seq:{0}  {1}nt'.format(seq, nRes))
+nCand = len(lines) - 1
+# load the data
+dots = []
+f1s = []
+engs = []
+for i in range(nCand):
+    dot,f1,eng = lines[i+1].split()
+    dots.append(dot)
+    f1s.append(f1)
+    engs.append(eng)
+print('topN:', topN, 'nCand:', nCand)
+# compare and select the top-N
+f1s_TopN = [f1s[0]]
+dots_TopN = [dots[0]]
+engs_TopN = [engs[0]]
+nTop = 1
+#----------------------------------------
+unChecked = np.ones(nCand, dtype='int16')
+unChecked[0] = 0
+for i in range(1, nCand):
+    if nTop==topN:
+        break
+    if unChecked[i]:
+        dot_1 = dots[i]
+        #-------------------------------
+        iUnique = 1
+        for n in range(len(dots_TopN)):
+            if dot_1==dots_TopN[n]:
+                unChecked[i] = 0
+                iUnique = 0
+        #--------------------------------
+        if iUnique:
+            dots_TopN.append(dots[i])
+            engs_TopN.append(engs[i])
+            f1s_TopN.append(f1s[i])
+            nTop += 1
+#------ save the file --------------
+for i in range(len(dots_TopN)):
+    ln = '{0:3d} {1} {2:6s} {3:10s}'.format(i, dots_TopN[i], f1s_TopN[i], engs_TopN[i])
+    print(ln)
+#================================================================================================
+f1s_TopN = np.array(list(map(float,f1s_TopN)))
+idxs = np.where(f1s_TopN==np.max(f1s_TopN))[0]
+print('Best among top-{0}'.format(topN))
+for idx in idxs:
+    print('{0:3d} {1} {2:6.4f} {3:10s}'.format(idx, dots_TopN[idx], f1s_TopN[idx], engs_TopN[idx]))

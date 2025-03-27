@@ -1,0 +1,76 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import os
+import sys
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib
+import argparse
+
+#----------------------------------------------------------------------------------------------
+parser = argparse.ArgumentParser(description='='*80+"\n  *** smd_Force_Extension ***\n\n\tDraw the force-extension curves of SMD simulation\n"+'='*80, formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument('--fndist',type=str, help='A list of filename index (without blanks). E.g., [./refold/dist.RST,./unfold/dist.RST]''\n\n', metavar='')
+parser.add_argument('--lw', default=1, type=float, help='linewidth, default=1''\n\n', metavar='')
+parser.add_argument('--s', default=2, type=float, help='markersize, default=2''\n\n', metavar='')
+parser.add_argument('--compression', default=100, type=int, help='The data is averaged every "compression" steps, default=2''\n\n', metavar='')
+#----------------------------------------------------------------------------------------------
+args = parser.parse_args()
+LW = args.lw
+MARKERSIZE = args.s
+fnDist = args.fndist.replace('[','').replace(']','').split(',')
+Compress = [args.compression] * len(fnDist)
+needLegend = 1
+print('Compression:', Compress)
+#-------------------------------------------------------------------------------------------
+#=================================================================================================================================
+#COLOR = ['#E1E3DA']*0+ ['#44633F']*1+['#548687']*1+['#8FBC94']*1 + ['#EC7357']*1+['#F68657']*1+['#F6B352']*1 +['red']*1
+#COLOR = ['#ff7473', '#ffc952', '#47b8e0']
+#COLOR = ['#E1E1E1']*10 + ['#F6B352']*10 + ['#EE7785']*0 + ['#84B1ED']*0 + ['#548687']*10 + ['#9055A2']*1 + ['#383A3F']*1
+#COLOR = ['#9055A2']*5 + ['#EE7785']*5 + ['#F6B352']*10 + ['#548687']*10
+#COLOR = ['#383A3F']*5 + ['#84B1ED']*0 + ['#548687']*0 + ['#9055A2']*10
+##COLOR = ['#E71D36'] + 
+#COLOR = ['#7A17F4', '#485CF1', '#4CA4E8', '#6CD3DB', '#A6D2CC', '#B1D8AC', '#D5D58B', '#F29D66', '#EC673F', '#EA3524']
+#plt.figure(figsize=(10,8))
+#-------------------------------------------------------------------------------------------
+for n in range(len(fnDist)):
+    print(fnDist[n])
+    lines = open(fnDist[n]).readlines()
+    extension = []
+    force = []
+    for line in lines:
+        data = line.split()
+        if len(data)<3:
+            break
+        extension.append(data[1])
+        force.append(data[2])
+    extension = np.array(list(map(float, extension)))
+    force = np.array(list(map(float, force))) * 69.5
+
+    #--------- smoothing --------------------------------------------------------------------------
+    compress = Compress[n]
+    ndata = len(extension)
+    ndata_compressed = int(ndata/compress)
+    smoothed_extension = []
+    smoothed_force = []
+    for i in range(ndata_compressed):
+        smoothed_extension.append(np.sum(extension[i*compress:(i+1)*compress]))
+        smoothed_force.append(np.sum(force[i*compress:(i+1)*compress]))
+    smoothed_extension = np.array(list(map(float, smoothed_extension))) / compress
+    smoothed_force = np.array(list(map(float, smoothed_force))) / compress
+
+    #----------- draw ----------------------------------------------------------------------
+    TITLE = fnDist[n]    
+    plt.plot(smoothed_extension, smoothed_force, lw=LW, marker='o', markersize=MARKERSIZE, label=TITLE, alpha=0.6)
+#-----------------------------------------------------------------
+plt.xlabel('Extension (Angstrom)', fontsize=20)
+plt.ylabel('Force (pN)', fontsize=20)
+plt.title('(Compression={0})'.format(compress), fontsize=20)
+
+#plt.ylim(-5, 35)
+#plt.xlim(0,300)
+plt.xticks(fontsize=15)
+plt.yticks(fontsize=15)
+plt.subplots_adjust(top=0.90, bottom=0.15, )
+
+if needLegend:
+    plt.legend(markerscale=2, fontsize=12)
+plt.show()

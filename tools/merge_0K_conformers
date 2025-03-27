@@ -1,0 +1,65 @@
+#!/home/xiangl/miniconda3/envs/my_python3.9/bin/python
+import os
+import numpy as np
+import argparse
+
+#====== Main ====================================================================================================
+parser = argparse.ArgumentParser(description='='*80+"\n  *** merge_0K_conformers ***\n\n\t Extract the desired conformers (usually at 0K) from energy output file\n\t and merge them into another energy output file\n"+'='*80, formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument('--unrestrained', type=str, help='The energy output file from un-restrained MD; default = ''run.out''\n\n', metavar='')
+parser.add_argument('--Nrsn', type=int, help='The number of energy output file from restrained MD\n\n', metavar='')
+parser.add_argument('--restrained', type=str, help='The directory of energy output files from restrained MD\n\n', metavar='')
+parser.add_argument('--merge', type=str, help='The merged energy output file, suffix "_merge.out" is recommended\n\n', metavar='')
+parser.add_argument('--step', default=1, type=int, help='The step gap to read the data, default=1''\n\n', metavar='')
+parser.add_argument('--len', default=3, type=int, help='The lenght file index number, default=3, (_000.in)\n\n', metavar='')
+args = parser.parse_args()
+#-------------------------------------------------------------------------------------------------------------------------------
+fnMerge = args.merge
+STEP = args.step            # frames of one H&C cycle
+nFile = args.Nrsn           # the number of energy output files from restrained MD
+PATH_rsn = args.restrained
+LEN = args.len  #
+#-------------------------------------------------------------------------------------------------------------------------------
+# extract the un-restrained conformers
+fnOuts = []
+if args.unrestrained != None:
+    fnOuts.append(args.unrestrained)
+    print("Note: un-restrained sampling is extracted")
+else:
+    print("Note: only restrained sampling is extracted")
+# extract the restrained conformers
+for i in range(nFile):
+    fnOuts.append(PATH_rsn + 'run{0}.out'.format(str(i+1).zfill(LEN)))
+#print('fnOuts:', fnOuts)
+print('STEP:', STEP)
+
+#-------- start extracting ---------------------------------------------------
+fo = open(fnMerge, "w")
+nCand = 0
+for i in range(len(fnOuts)):
+    fnout = fnOuts[i]
+    fo.write('='*80 + '\n')
+    fo.write('   {0}\n'.format(fnout))
+    fo.write('='*80 + '\n')
+    lines = open(fnout).readlines()
+    #print(fnout, len(lines))
+    nframe = 0
+    for j in range(len(lines)):
+        if lines[j][0:3] == '//-':
+            nframe += 1
+            # only extract the 0K frame
+            #print(nframe%STEP)
+            if nframe%STEP == 0:
+                #print(nframe)
+                nCand += 1
+                for k in range(j, len(lines)):
+                    if len(lines[k]) > 2:
+                        fo.write(lines[k])
+                    else:
+                        fo.write('\n')
+                        break
+
+    #print('nframe:', nframe)
+fo.close()
+print('written:', fnMerge)
+print('nCand_merged=', nCand)
+fo.close()
