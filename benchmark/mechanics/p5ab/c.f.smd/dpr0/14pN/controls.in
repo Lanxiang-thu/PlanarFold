@@ -1,0 +1,24 @@
+
+ &cntl
+  ntpr = 500000,
+  ntwx = 500000,
+  ntr = 0,
+  ismd = 1,
+  dumpfreq = 10000,
+  stretch_force = 0.2014,
+  stretch_spring = 0.000033,
+  rcut = 11.0,
+  nscm = 1000,
+  nstlim = 250000000,
+  dt = 0.004,
+  ntt = 1,
+  ntemp = 1,
+  tautp = 0.005,
+  temp0 = 433.0,
+  tempi = 433.0,
+  duration = 50000,
+  dpr = 0,
+ /
+
+
+
