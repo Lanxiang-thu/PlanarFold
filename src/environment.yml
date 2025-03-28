@@ -10,6 +10,6 @@ dependencies:
   - cmake                 # if other lib are compiles
   - compilers             # g++
   - scipy=1.13.1
-  - matplotlib=3.9.4
+  - matplotlib
   - scikit-learn=1.6.1
   - seaborn=0.13.2
