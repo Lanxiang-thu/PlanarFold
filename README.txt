@@ -6,7 +6,7 @@
 
 2. Create and activate conda environment：(this step might take a while)
   $ conda env create -f environment.yml
-  $ conda activate my_python3.9
+  $ conda activate planarfold
 
 3. Compile the software：
   $ cd PlanarFold/src
