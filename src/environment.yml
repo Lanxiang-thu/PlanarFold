@@ -1,4 +1,4 @@
-name: my_python3.9
+name: planarfold
 channels:
   - conda-forge
   - defaults
