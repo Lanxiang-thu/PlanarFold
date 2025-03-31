@@ -1,5 +1,5 @@
 #!/bin/sh
-CONDA_PREFIX=$(conda info --base)/envs/my_python3.9
+CONDA_PREFIX=$(conda info --base)/envs/planarfold
 
 g++ \
   -I$CONDA_PREFIX/include/python3.9 \
