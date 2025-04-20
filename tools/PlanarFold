@@ -33,9 +33,9 @@ fnrst = args.r
 fnntr = args.ntr
 fndpr = args.dpr
 #------------------------------------
-print('Reading files ...')
+#print('Reading files ...')
 md = System(fntop, fncrd, fninp, fnprm, fnntr, fndpr, fnout, fntrj, fnrst)
-print('Done')
+#print('Done')
 #------------------------------------
 print('Performing MD ...')
 md.run()
