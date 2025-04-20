@@ -135,7 +135,7 @@ def alignstr(strs):
 def dot2helix(filename):
     lines = open(filename).readlines()
     mark0 = lines[1].strip()
-    print("Restaint:\n", mark0)
+    #print("Restaint:\n", mark0)
     nRes = len(mark0)
     lbrk = 0
     rbrk = 0
@@ -148,8 +148,8 @@ def dot2helix(filename):
     if lbrk!=rbrk:
         print("'('[{0:d}] not equil to ')'[{1:d})]".format(lbrk, rbrk))
         sys.exit(0)
-    else:
-         print("RNA has {0:d} basepairs".format(lbrk))
+    #else:
+    #    print("RNA has {0:d} basepairs".format(lbrk))
     #------------------------------------------------------
     mark = '.'
     for i in range(nRes):
@@ -160,7 +160,7 @@ def dot2helix(filename):
         else:
             print('this is neither a dot nor a bracket:', mark0[i])
             sys.exit(0)
-    print("Restaint trimmed:\n", mark[1:])
+    #print("Restaint trimmed:\n", mark[1:])
     #------------------------------------------------------
     rBplist = []
     left = []
@@ -188,7 +188,7 @@ def dot2helix(filename):
             rBplist.append(stem)
         elif slope[i]== '-' and slope[i+1]=='+':
             stem = []
-    print("slope:\n", slope[1:])
+    #print("slope:\n", slope[1:])
     i = 0
     nrBp = []
     maxHelix = 0
@@ -198,7 +198,7 @@ def dot2helix(filename):
             maxHelix = length
         nrBp.append(length)
         i += 1
-        print('chain-{0:d}({1:d}bp):'.format(i, length),  c)
+        #print('chain-{0:d}({1:d}bp):'.format(i, length),  c)
     nchain = i
     for i in range(len(rBplist)):
         rBplist[i] += [0] * (maxHelix*2 - len(rBplist[i]))
@@ -259,7 +259,7 @@ def dot2bps(filename, minloop):
             #
             bp5.pop()
     #-------------------------------------------------
-    print('bplist:', bplist)
+    #print('bplist:', bplist)
     bps = []
     for i in range(nRes):
         if bplist[i] > -1:
@@ -271,7 +271,7 @@ def dot2bps(filename, minloop):
             #print(i, 'bplist:', bplist)
     nBP = int(len(bps) / 2)
     print('There are {} basepairs'.format(nBP))
-    print('bps:', bps)
+    #print('bps:', bps)
     return [nBP, bps]
 
 #====== Prmtop ================================================================
@@ -396,7 +396,7 @@ class Prmtop:
             elif section[0][6:25] == 'EXCLUDED_ATOMS_LIST':
                 self.inb = read_list(section, 10,'I', 8)
                 self.nNBres = len(self.inb)
-                print('EXCLUDED_ATOMS_LIST({0}): {1}'.format(self.nNBres, self.inb))
+                #print('EXCLUDED_ATOMS_LIST({0}): {1}'.format(self.nNBres, self.inb))
 
 #====== Restart ===============================================================
 class Restart:
@@ -441,7 +441,7 @@ class Restart:
             crd.append(float(data[k:k+12]))
             k += 12
 
-        print('len(lines)=', len(lines), 'self.natom=', self.natom)
+        #print('len(lines)=', len(lines), 'self.natom=', self.natom)
         if len(lines) > self.natom:   # which means this inpcrd has no vel info
             vel = []
             data = ''
@@ -470,7 +470,7 @@ class Restart:
     #----------- Rst ----------------------------------------------------------
     def read_rst(self, inp):
         nc = netcdf_file(inp, 'r', mmap = False)
-        print('\n read from{0}'.format(inp))
+        #print('\n read from{0}'.format(inp))
         vars = list(nc.variables.keys())
         # use 'cell' to store cell_lengths[0:3], cell_angles[3:6], and time[6]
         self.box = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -505,8 +505,8 @@ class Restart:
             elif var == 'cell_angular':         # string
                 self.cell_angular = data[:]
         
-        print('the dtype of crd read in python', self.crd.dtype, 'crd[0]=', self.crd[0])
-        print('the dtype of vel read in python', self.vel.dtype, 'vel[0]=', self.vel[0])
+        #print('the dtype of crd read in python', self.crd.dtype, 'crd[0]=', self.crd[0])
+        #print('the dtype of vel read in python', self.vel.dtype, 'vel[0]=', self.vel[0])
         nc.close()
 
 #====== Controls ===============================================================
@@ -550,14 +550,14 @@ class Controls:
         self.tautp = 0.005
         self.iCircular = 0
         self.verlet_cut = 30.0
-        self.nVerlet = 1000
+        self.nVerlet = 500
         self.dpr = 0
         self.iCollide = 0
         #---- Read and undate the values ------------
         lines = open(inp).readlines()
         for i in range(len(lines)):
             if lines[i].strip() == '&cntl':
-                print(lines[i])
+                #print(lines[i])
                 for j in range(i+1, len(lines)):
                     if lines[j].strip() == '/':
                         break
@@ -568,7 +568,7 @@ class Controls:
                     variable = variable.strip()
                     value = value.strip()
                     if variable == 'ntpr':
-                        print('#ntpr=', int(value[:-1]))
+                        #print('#ntpr=', int(value[:-1]))
                         self.ntpr = int(value[:-1])
                     elif variable == 'ntwx':
                         self.ntwx = int(value[:-1])
@@ -669,7 +669,7 @@ class ForceParms:
         lines = open(inp).readlines()
         for i in range(len(lines)):
             if lines[i].strip() == '&parm':
-                print(lines[i])
+                #print(lines[i])
                 for j in range(i+1, len(lines)):
                     if lines[j].strip() == '/':
                         break
@@ -830,7 +830,7 @@ class System:
             print("ntemp != len(temp0)")
             print("Please change the temperature controlling parameters !!!")
             sys.exit(1)
-        print('ctrlist:', ctrlist)
+        #print('ctrlist:', ctrlist)
         prmlist = [self.fparm.sigma, self.fparm.epsilon, self.fparm.vcut,
                    self.fparm.bphm_eq, self.fparm.bphm_k, self.fparm.bphm_p,
                    self.fparm.angle_eq, self.fparm.angle_k, self.fparm.angle_p,
@@ -848,10 +848,10 @@ class System:
             sys.exit(1)
         #print('nchain:\n', self.rsn.nchain)
         #print('maxHelix:\n', self.rsn.maxHelix)
-        print('ntr_nBp:\n', self.ntr.nrBp)
-        print('ntrBplist:\n', np.array(self.ntr.rBplist))
-        print('dpr_nBp:\n', self.dpr.nrBp)
-        print('dprBplist:\n', np.array(self.dpr.rBplist))
+        #print('ntr_nBp:\n', self.ntr.nrBp)
+        #print('ntrBplist:\n', np.array(self.ntr.rBplist))
+        #print('dpr_nBp:\n', self.dpr.nrBp)
+        #print('dprBplist:\n', np.array(self.dpr.rBplist))
         ntrlist = [self.ntr.nrBp, np.array([self.ntr.rBplist], dtype='int32')]
         dprlist = [self.dpr.nrBp, np.array([self.dpr.rBplist], dtype='int32')]
         ext.run_md(toplist, rstlist, ctrlist, prmlist, ntrlist, dprlist, self.fnout, self.fntrj, self.fnrst)
