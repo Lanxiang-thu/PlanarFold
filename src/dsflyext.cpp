@@ -29,7 +29,7 @@ void run_md(list toplist, list rstlist, list ctrlist, list prmlist, list ntrlist
 
 //-------------------------------------------------------------------------------------------------------------
 // initialize force field parameters
-    //printf("Start: extract prmtop\n");
+    printf("Start: extract prmtop\n");
     // pointer
     object obj_pointers =    extract<object>(toplist[0]);
     top.pointers     =    (int *)(PyArray_DATA(obj_pointers.ptr()));
@@ -51,11 +51,11 @@ void run_md(list toplist, list rstlist, list ctrlist, list prmlist, list ntrlist
     // nNBres
     top.nNBres         =    extract<int>(toplist[6]);
 
-	//printf("Done: extract prmtop\n");
+	printf("Done: extract prmtop\n");
 
 //-----------------------------------------------------------------------------------------------------------
 // initialize coordinates, velocities, and cell dimensions
-    //printf("Start: extract rst\n");
+    printf("Start: extract rst\n");
     // cell
     for (i = 0; i < 6; i++){
         sdt.box[i]   = extract<double>(rstlist[0][i]);
@@ -66,20 +66,21 @@ void run_md(list toplist, list rstlist, list ctrlist, list prmlist, list ntrlist
     // vel
     object obj_vel     =    extract<object>(rstlist[2]);
     sdt.vel        = (double *)(PyArray_DATA(obj_vel.ptr()));
-	//printf("Done: extract rst\n");
+	printf("Done: extract rst\n");
 
     // test for variable type length 
-    //cout<<"sizeof(sdt.crd[0]):"<<sizeof(sdt.crd[0])<<endl;
-    //cout<<"sizeof(sdt.vel[0]):"<<sizeof(sdt.vel[0])<<endl;
+    cout<<"sizeof(sdt.crd[0]):"<<sizeof(sdt.crd[0])<<endl;
+    cout<<"sizeof(sdt.vel[0]):"<<sizeof(sdt.vel[0])<<endl;
     //
 
 //-----------------------------------------------------------------------------------------------------------
 // initialize control variables
-    //printf("Start: extract control\n");
+    printf("Start: extract control-1\n");
     ctl.ntpr            = extract<int>(ctrlist[0]);
     ctl.ntwx            = extract<int>(ctrlist[1]);
     ctl.ntr             = extract<int>(ctrlist[2]);
     //
+    printf("Start: extract control-1\n");
     ctl.ismd            = extract<int>(ctrlist[3]);
     ctl.dumpfreq        = extract<int>(ctrlist[4]);
     ctl.stretch_force   = extract<double>(ctrlist[5]);
@@ -90,6 +91,7 @@ void run_md(list toplist, list rstlist, list ctrlist, list prmlist, list ntrlist
     ctl.restraint_eq    = extract<double>(ctrlist[10]);
     ctl.rcut            = extract<double>(ctrlist[11]);
     //
+    printf("Start: extract control-1\n");
     ctl.nscm            = extract<int>(ctrlist[12]);
     ctl.nstlim          = extract<int>(ctrlist[13]);
     ctl.dt              = extract<double>(ctrlist[14]);
@@ -101,18 +103,30 @@ void run_md(list toplist, list rstlist, list ctrlist, list prmlist, list ntrlist
     ctl.tempi           = (double *)(PyArray_DATA(obj_tempi.ptr()));
     object obj_duration = extract<object>(ctrlist[18]);
     ctl.duration        = (int *)(PyArray_DATA(obj_duration.ptr()));
+    printf("Start: extract control-4\n");
     ctl.ntemp           = extract<int>(ctrlist[19]);
     ctl.tautp           = extract<double>(ctrlist[20]);
     top.iCircular       = extract<int>(ctrlist[21]);
     ctl.verlet_cut      = extract<double>(ctrlist[22]);
     ctl.nVerlet         = extract<int>(ctrlist[23]);
+    printf("Start: extract control-5\n");
     ctl.dpr             = extract<int>(ctrlist[24]);
+    printf("Start: extract control-1\n");
+
     ctl.iCollide        = extract<int>(ctrlist[25]);
-    //printf("Done: extract control\n");
+    printf("Start: extract control-1\n");
+
+    ctl.iPK             = extract<int>(ctrlist[26]);
+    printf("Start: extract control-1\n");
+
+    
+    printf("Start: extract control-6\n");
+    printf("Done: extract control\n");
+    sdt.iPK = ctl.iPK;
 
 //---- Reading force field parameters ---------------------------
     //----------------------------------------------------
-    //printf("Start: extract force field parms\n");
+    printf("Start: extract force field parms\n");
     top.sigma           = extract<double>(prmlist[0]);
     top.epsilon         = extract<double>(prmlist[1]);
     top.vcut            = extract<double>(prmlist[2]);
@@ -157,7 +171,7 @@ void run_md(list toplist, list rstlist, list ctrlist, list prmlist, list ntrlist
     //------------------------------------------------------------------------------------------------------
     // initialize restaint variables
     if (ctl.ntr or ctl.dpr){
-        //printf("Start: extract restraint\n");
+        printf("Start: extract restraint\n");
         //------------- ntr ---------------------------------------------
         top.ntr_nBP      = extract<int>(ntrlist[0]);
         object obj_ntrBplist =    extract<object>(ntrlist[1]);
@@ -166,9 +180,8 @@ void run_md(list toplist, list rstlist, list ctrlist, list prmlist, list ntrlist
         top.dpr_nBP      = extract<int>(dprlist[0]);
         object obj_dprBplist =    extract<object>(dprlist[1]);
         top.dprBplist  =    (int *)(PyArray_DATA(obj_dprBplist.ptr()));
-        //printf("Done: extract restraint\n");
+        printf("Done: extract restraint\n");
         n = 0;
-        /*
         printf("ntr restriants:\n");
         for (i = 0; i < top.ntr_nBP; i++){
             printf("%d-%d  ", top.ntrBplist[n], top.ntrBplist[n+1]);
@@ -179,7 +192,6 @@ void run_md(list toplist, list rstlist, list ctrlist, list prmlist, list ntrlist
             printf("%d-%d  ", top.dprBplist[n], top.dprBplist[n+1]);
             n += 2;
         }
-        */
         // multiply 3 to index
         ///for (i = 0; i < top.nrBp * 2; i++){
         ///    top.ntrBplist[i] *= 3;
@@ -201,7 +213,7 @@ void run_md(list toplist, list rstlist, list ctrlist, list prmlist, list ntrlist
     }
     
 
-    //printf("the interface is okay!\n");
+    printf("the interface is okay!\n");
 tim.t_Extract += punchClock(tim.tt);
     
     // output file !!!
@@ -212,7 +224,7 @@ tim.t_Extract += punchClock(tim.tt);
     // Time log
     time_t timep;        
     time (&timep); 
-    //printf("Current time: %s", asctime(gmtime(&timep)));
+    printf("Current time: %s", asctime(gmtime(&timep)));
     fprintf(fp, "\n*******************************************************************************\n");
     fprintf(fp, "  Time log (GMT): %s", asctime(gmtime(&timep)));
     fprintf(fp, "*******************************************************************************\n");
@@ -311,23 +323,23 @@ tim.t_Extract += punchClock(tim.tt);
 //-------------------------------------------------------------------------
     // preparation work facilitating verlet integration loop
     prepare(&ctl, &top, &eng, &sdt, &tim, fp, 0);
-	//printf("the prepare() is done!\n");
+	printf("the prepare() is done!\n");
     // cout<<"sizeof(sdt.acl[0]):"<<sizeof(sdt.acl[0])<<endl;
 
     // creat restart file (e.g. run001.rst)
     strcpy(ncf.Rst_filename, "");
     //strcat(ncf.Rst_filename, "run.rst");
     strcat(ncf.Rst_filename, fnRst.c_str());
-    //printf("ncf.Rst_filename: %s\n", ncf.Rst_filename);
-    //printf("Natom=%d\n", sdt.natom);
+    printf("ncf.Rst_filename: %s\n", ncf.Rst_filename);
+    printf("Natom=%d\n", sdt.natom);
     createRst(sdt.natom, &ncf);
-    //printf("createRst is okay\n");
+    printf("createRst is okay\n");
 
     // creat trajectory file (e.g. run001.nc)
     strcpy(ncf.Trj_filename, "");
     //strcat(ncf.Trj_filename, "run.nc");
     strcat(ncf.Trj_filename, fnTrj.c_str());
-    //printf("ncf.Trj_filename: %s\n", ncf.Trj_filename);
+    printf("ncf.Trj_filename: %s\n", ncf.Trj_filename);
     nframe = (int) (ctl.nstlim / ctl.ntwx);     // e.g. nframe= 500,000/500 =1000
     createTrj(sdt.natom, nframe, &ncf);
 
@@ -339,7 +351,7 @@ tim.t_Extract += punchClock(tim.tt);
     ntpr = ctl.ntpr;
     // to store single precision coordinates for writeTrj
     crdF = (float*) malloc(3 * sdt.natom * sizeof(float));
-    //printf("before verlet is okay\n");
+    printf("before verlet is okay\n");
 
     // the thermostat: heating or cooling or equiling?
     int dura, duratot;
@@ -358,7 +370,7 @@ tim.t_Extract += punchClock(tim.tt);
 
     // Preparation works are all done, now perform dynamics loop
 tim.t_Prepare += punchClock(tim.tt);
-    //printf("verlet loop ... ... \n");
+    printf("verlet loop ... ... \n");
     for(i = 1; i < nstep+1; i++){
         /*
         printf("//-------------------------------------------------------------------\n");
@@ -480,7 +492,7 @@ tim.t_Write += punchClock(tim.tt);
 tim.t_Write += punchClock(tim.tt);
         }
     }
-    //printf("the verlet loop is done!\n");
+    printf("the verlet loop is done!\n");
 
     // 1.write restart file, and 2.close rst/nc file
     if (i == nstep+1){
@@ -489,10 +501,10 @@ tim.t_Write += punchClock(tim.tt);
         tim.t_Write += punchClock(tim.tt);
     }
     free(crdF);
-    //printf("Trj and Nc files are written!\n");
+    printf("Trj and Nc files are written!\n");
     closeRstTrj(&ncf);
     // deallocate the pointers allocated in 'prepare()'
-	//printf("the freeC() is done!\n");
+	printf("the freeC() is done!\n");
 
     // stop the time logging
     StopTimer(&tim, fp);
@@ -500,7 +512,7 @@ tim.t_Write += punchClock(tim.tt);
     if (ctl.ntr == 3) {
         fclose(fp_smd);
     }
-    //printf("output file is written and closed!\n");
+    printf("output file is written and closed!\n");
 }
 
 BOOST_PYTHON_MODULE(dsflyext)

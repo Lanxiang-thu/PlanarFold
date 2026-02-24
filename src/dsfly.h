@@ -67,6 +67,8 @@ struct States {
     int** verlet_list;
     int* verlet_natom;
     long int rndcon;    // The random number counter
+    // For the pseudoknot and trans-isomer
+    int iPK;       // default=0, forbidding the formation of PK and trans-isomer
 };
 typedef struct States state;
 
@@ -216,6 +218,8 @@ struct Mdcontrol{
     int nVerlet;    // the step to update verlet list (1000 would be fine)
     // the random collision with water to avoid sine wave (for very long non-pairing RNA)
     int iCollide;   // to asign random collision of water with residues
+    // For the pseudoknot and trans-isomer
+    int iPK;       // default=0, forbidding the formation of PK and trans-isomer
 };
 typedef struct Mdcontrol control;
 
@@ -243,6 +247,9 @@ struct TimeLog{
     double t_BP_exTri;
     double t_BP_exPK;
     double t_BP_Angs;
+    double t_BP_cmap;
+    double t_BP_blocks;
+
     //
     int* Memory_check;
 };

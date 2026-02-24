@@ -746,7 +746,7 @@ tim->t_BP_others += punchClock(tim->tt);
         }
     }
 //tim->t_BP_DP += punchClock(tim->tt);
-
+tim->t_BP_cmap += punchClock(tim->tt);
     /*
     //----------------------------------------------------------------------------------------------------
     // ------ Step 2. Split into the blocks and find out the bolck harboring the maximum cmap ------------
@@ -903,6 +903,8 @@ tim->t_BP_exTri += punchClock(tim->tt);
             }
         }
     }
+tim->t_BP_blocks += punchClock(tim->tt);
+
     //printf("nBlock=%d\n", nBlock);
 
     //----------------------------------------------------------------------------------------------------
@@ -1103,34 +1105,41 @@ tim->t_BP_DP += punchClock(tim->tt);
         //---------------------------------------------------------------------
         //--------- Step 4.2. Check the trans-isomer and Pseudoknots -----------
         //---------------------------------------------------------------------
-        // 1. translation to superimpose 'bp5-5' onto the origin
-        moveX = sdt->crd[3*aBPlist5[n]];
-        moveY = sdt->crd[3*aBPlist5[n]+1];
-        // translate the crd of "bp5-3" 
-        crdTx = sdt->crd[3*aBPlist3[n]] - moveX;
-        crdTy = sdt->crd[3*aBPlist3[n]+1] - moveY;
-        // get and translate the middle of "second basepair"
-        // NOTICE: 'second-bp' is replace by the adjacent [i+1] and [j-i]
-        //          for the harmony of stems and lonepairs (without 2nd bp)
-        crdMx = (sdt->crd[3* (aBPlist5[n]+1)   ] + sdt->crd[3* (aBPlist3[n]-1)   ])/2 - moveX;
-        crdMy = (sdt->crd[3* (aBPlist5[n]+1) +1] + sdt->crd[3* (aBPlist3[n]-1) +1])/2 - moveY;
-        // 2. rotation 'bp5' to align with "x+" axis
-        theta = acos(crdTx / sqrt(crdTx*crdTx + crdTy*crdTy));  //rotation angle
-        if (crdTy>0){   //change to clockwise rotation!
-            theta = -theta;
+        if (sdt->iPK == 0) {
+            // 1. translation to superimpose 'bp5-5' onto the origin
+            moveX = sdt->crd[3*aBPlist5[n]];
+            moveY = sdt->crd[3*aBPlist5[n]+1];
+            // translate the crd of "bp5-3"
+            crdTx = sdt->crd[3*aBPlist3[n]] - moveX;
+            crdTy = sdt->crd[3*aBPlist3[n]+1] - moveY;
+            // get and translate the middle of "second basepair"
+            // NOTICE: 'second-bp' is replace by the adjacent [i+1] and [j-i]
+            //          for the harmony of stems and lonepairs (without 2nd bp)
+            crdMx = (sdt->crd[3* (aBPlist5[n]+1)   ] + sdt->crd[3* (aBPlist3[n]-1)   ])/2 - moveX;
+            crdMy = (sdt->crd[3* (aBPlist5[n]+1) +1] + sdt->crd[3* (aBPlist3[n]-1) +1])/2 - moveY;
+            // 2. rotation 'bp5' to align with "x+" axis
+            theta = acos(crdTx / sqrt(crdTx*crdTx + crdTy*crdTy));  //rotation angle
+            if (crdTy>0){   //change to clockwise rotation!
+                theta = -theta;
+            }
+            // Rotation Matrix = [[cos(theta), -sin(theta)],[sin(theta), cos(theta)]]
+            crdMrotY = crdMx*sin(theta) + crdMy*cos(theta);
+            crdMrotY = (crdMrotY<-1.0) ? -1.0 : (crdMrotY>1.0) ? 1.0 : crdMrotY;
+            // 3. determine the orientation of stem
+            if (crdMrotY>0.0){ // upwards
+                orient[i] = 1;
+                upward += aStem[i];
+            }
+            else{       // downwards
+                orient[i] = -1;
+                downward += aStem[i];
+            }
         }
-        // Rotation Matrix = [[cos(theta), -sin(theta)],[sin(theta), cos(theta)]]
-        crdMrotY = crdMx*sin(theta) + crdMy*cos(theta);
-        crdMrotY = (crdMrotY<-1.0) ? -1.0 : (crdMrotY>1.0) ? 1.0 : crdMrotY;
-        // 3. determine the orientation of stem
-        if (crdMrotY>0.0){ // upwards
+        else{
             orient[i] = 1;
             upward += aStem[i];
         }
-        else{       // downwards
-            orient[i] = -1;
-            downward += aStem[i];
-        }
+        
         n += aStem[i];
     }
     //----------------------------------------------------------------------

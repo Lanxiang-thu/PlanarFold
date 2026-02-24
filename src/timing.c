@@ -43,6 +43,8 @@ void InitTimer(timer *tim){
     tim->t_BP_exPK = 0.0;
     tim->t_BP_Angs = 0.0;
     tim->t_BP_others = 0.0;
+    tim->t_BP_cmap = 0.0;
+    tim->t_BP_blocks = 0.0;
     tim->t_Thermostat = 0.0;    // time of thermostating. (including the EKtot computation)
     tim->t_Restraint = 0.0;     // time of calculating restraint
     tim->t_Barostat = 0.0;      // time of barostating
@@ -63,7 +65,8 @@ void StopTimer(timer *tim, FILE *fp){
         (1.0e-6)*(tim->t_End.tv_usec - tim->t_Start.tv_usec);
 
     tim->t_BasePair = tim->t_BP_DP + tim->t_BP_others + tim->t_BP_HB
-                    + tim->t_BP_exTri + tim->t_BP_exPK + tim->t_BP_Angs;
+                    + tim->t_BP_exTri + tim->t_BP_exPK + tim->t_BP_Angs
+		    + tim->t_BP_cmap + tim->t_BP_blocks;
 
     printf("This is a memery check");
     tim->Memory_check = (int *)malloc(10*sizeof(int));
@@ -84,6 +87,8 @@ void StopTimer(timer *tim, FILE *fp){
     printf(" t_BasePair    | %10.2lf       %6.2lf\n", tim->t_BasePair, 100 * tim->t_BasePair/dtot);
     printf("    t_BP_DP       | %10.2lf       %6.2lf\n", tim->t_BP_DP, 100 * tim->t_BP_DP/dtot);
     printf("    t_BP_others   | %10.2lf       %6.2lf\n", tim->t_BP_others, 100 * tim->t_BP_others/dtot);
+    printf("    t_BP_cmap     | %10.2lf       %6.2lf\n", tim->t_BP_cmap, 100 * tim->t_BP_cmap/dtot);
+    printf("    t_BP_blocks   | %10.2lf       %6.2lf\n", tim->t_BP_blocks, 100 * tim->t_BP_blocks/dtot);
     printf("    t_BP_exTri    | %10.2lf       %6.2lf\n", tim->t_BP_exTri, 100 * tim->t_BP_exTri/dtot);
     printf("    t_BP_exPK     | %10.2lf       %6.2lf\n", tim->t_BP_exPK, 100 * tim->t_BP_exPK/dtot);
     printf("    t_BP_Angs     | %10.2lf       %6.2lf\n", tim->t_BP_Angs, 100 * tim->t_BP_Angs/dtot);

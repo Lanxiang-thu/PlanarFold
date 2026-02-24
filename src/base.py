@@ -208,7 +208,6 @@ def dot2helix(filename):
             neorBplist.append(cc)
     return [nchain, maxHelix, nrBp, neorBplist]
 
-
 #===============================================================================
 def dot2bps(filename, minloop):
     lines = open(filename).readlines()
@@ -217,13 +216,26 @@ def dot2bps(filename, minloop):
     print('2D restraint:', dots)
     print('There are {} residues'.format(nRes))
     ddd = dots.replace('.', '').replace('(', '').replace(')', '')
+    ddd0 = ddd.replace('[', '').replace(']', '').replace('{', '').replace('}', '')
     if len(ddd)>0:
+        print("Note: Pseudoknot is involved.")
+    if len(ddd0)>0:
         print("Error !!!")
         print("Restraint:", dots)
         print("Un-recognizable format:", ddd)
-        print("Pseudo-knot is currently not allowed, please remove them")
+        print("High-order Pseudoknot (n>2) is currently not allowed, please remove them")
         sys.exit(1)
     if len(dots.replace('(', '')) != len(dots.replace(')', '')):
+        print("Error !!!")
+        print("Unmatching '(' and ')' !")
+        print("Please check your 2D structure restraint!")
+        sys.exit(1)
+    if len(dots.replace('[', '')) != len(dots.replace(']', '')):
+        print("Error !!!")
+        print("Unmatching '(' and ')' !")
+        print("Please check your 2D structure restraint!")
+        sys.exit(1)
+    if len(dots.replace('{', '')) != len(dots.replace('}', '')):
         print("Error !!!")
         print("Unmatching '(' and ')' !")
         print("Please check your 2D structure restraint!")
@@ -258,8 +270,34 @@ def dot2bps(filename, minloop):
             bplist[i] = bp5[-1]
             #
             bp5.pop()
+    for i in range(nRes):
+        # primary pseudoknot
+        if dots[i] == '[':
+            bp5.append(i)
+        elif dots[i] == ']':
+            #bps.append(bp5[-1])
+            #bps.append(i)
+            #
+            #print(i, bp5[-1])
+            bplist[bp5[-1]] = i
+            bplist[i] = bp5[-1]
+            #
+            bp5.pop()
+    for i in range(nRes):
+        # secondary pseudoknot
+        if dots[i] == '{':
+            bp5.append(i)
+        elif dots[i] == '}':
+            #bps.append(bp5[-1])
+            #bps.append(i)
+            #
+            #print(i, bp5[-1])
+            bplist[bp5[-1]] = i
+            bplist[i] = bp5[-1]
+            #
+            bp5.pop()
     #-------------------------------------------------
-    #print('bplist:', bplist)
+    print('bplist:', bplist)
     bps = []
     for i in range(nRes):
         if bplist[i] > -1:
@@ -271,8 +309,9 @@ def dot2bps(filename, minloop):
             #print(i, 'bplist:', bplist)
     nBP = int(len(bps) / 2)
     print('There are {} basepairs'.format(nBP))
-    #print('bps:', bps)
+    print('bps:', bps)
     return [nBP, bps]
+
 
 #====== Prmtop ================================================================
 class Prmtop:
@@ -553,6 +592,7 @@ class Controls:
         self.nVerlet = 500
         self.dpr = 0
         self.iCollide = 0
+        self.iPK = 0
         #---- Read and undate the values ------------
         lines = open(inp).readlines()
         for i in range(len(lines)):
@@ -620,6 +660,9 @@ class Controls:
                         self.dpr = int(value[:-1])
                     elif variable == 'iCollide':
                         self.iCollide = int(value[:-1])
+                    elif variable == 'iPK':
+                        self.iPK = int(value[:-1])
+
 #====== ForceParms ===============================================================
 class ForceParms:
     pass
@@ -761,11 +804,29 @@ class System:
         self.read_crd(fncrd)
         self.read_ctrl(fninp)
         self.read_parm(fnprm)
-        self.read_ntr(fnrsn_ntr, self.fparm.min_loop)
-        self.read_dpr(fnrsn_dpr, self.fparm.min_loop)
+        #self.read_ntr(fnrsn_ntr, self.fparm.min_loop)
+        #self.read_dpr(fnrsn_dpr, self.fparm.min_loop)
         self.fnout = fnout
         self.fntrj = fntrj
         self.fnrst = fnrst
+        
+        
+        #-------------------------------------------------------------------------------
+        # check restraint file (ntr.in) and confinement file (dpr.in)
+        self.fnrsn_ntr = fnrsn_ntr
+        if fnrsn_ntr is not None and fnrsn_ntr != "-":
+            print('restraint file:', fnrsn_ntr)
+            self.read_ntr(fnrsn_ntr, self.fparm.min_loop)
+        else:
+            self.ntr = None  #
+        self.fnrsn_dpr = fnrsn_dpr
+        if fnrsn_dpr is not None and fnrsn_dpr != "-":
+            print('confinement file:', fnrsn_dpr)            
+            self.read_dpr(fnrsn_dpr, self.fparm.min_loop)
+        else:
+            self.dpr = None  #
+        
+        
 
     #----- Topology --------------------------------------------------------------
     def read_top(self, fn):
@@ -785,11 +846,11 @@ class System:
 
     #------- Restraints (ntr)----------------------------------------------------------
     def read_ntr(self, fn, minloop):
-        self.ntr = Restraint(fn, minloop)   # use Prmtop class or include them directly?
+        self.ntr = Restraint(fn, minloop)   #
     #------- Restraints (dpr)----------------------------------------------------------
     def read_dpr(self, fn, minloop):
-        self.dpr = Restraint(fn, minloop)   # use Prmtop class or include them directly?
-
+        self.dpr = Restraint(fn, minloop)   #
+    #-------------------------------------------------------------------------------
     def run(self):
         # Call the C/C++ func produced by boost library
         toplist = [np.array([self.top.pointers],dtype='int32'),
@@ -814,6 +875,7 @@ class System:
                    self.ctrl.verlet_cut, self.ctrl.nVerlet,
                    self.ctrl.dpr,
                    self.ctrl.iCollide,
+                   self.ctrl.iPK,
                    ]
         if self.ctrl.ntemp != len(self.ctrl.duration):
             print("Error !!!")
@@ -852,6 +914,27 @@ class System:
         #print('ntrBplist:\n', np.array(self.ntr.rBplist))
         #print('dpr_nBp:\n', self.dpr.nrBp)
         #print('dprBplist:\n', np.array(self.dpr.rBplist))
-        ntrlist = [self.ntr.nrBp, np.array([self.ntr.rBplist], dtype='int32')]
-        dprlist = [self.dpr.nrBp, np.array([self.dpr.rBplist], dtype='int32')]
+        #print('?????')
+        if self.ntr is not None and self.fnrsn_ntr != "-":
+            ntrlist = [self.ntr.nrBp, np.array([self.ntr.rBplist], dtype='int32')]
+        else:
+            ntrlist = [0, np.array([], dtype='int32')]
+            
+        if self.dpr is not None and self.fnrsn_dpr != "-":
+            dprlist = [self.dpr.nrBp, np.array([self.dpr.rBplist], dtype='int32')]
+        else:
+            dprlist = [0, np.array([], dtype='int32')]
+        #------- check ------------------------------------
+        if self.ctrl.ntr > 0 and ntrlist[0]==0:
+            print("Error: ntr=1, please specify the restraint file: 'PlanarFold -ntr xxx_ntr.in'")
+            sys.exit(1)
+        if self.ctrl.dpr > 0 and dprlist[0]==0:
+            print("Error: dpr=1, please specify the confinement file:'PlanarFold -dpr xxx_dpr.in'")
+            sys.exit(1)
+
+        #----------------------------------------------------
+        #print('ntrlist:', ntrlist)
+        #print('dprlist:', dprlist)
+        #ntrlist = [self.ntr.nrBp, np.array([self.ntr.rBplist], dtype='int32')]
+        #dprlist = [self.dpr.nrBp, np.array([self.dpr.rBplist], dtype='int32')]
         ext.run_md(toplist, rstlist, ctrlist, prmlist, ntrlist, dprlist, self.fnout, self.fntrj, self.fnrst)
